@@ -1,0 +1,13 @@
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssh-client \
+    passwd \
+    login \
+    procps \
+    iproute2 \
+    util-linux \
+    coreutils \
+    bash \
+ && rm -rf /var/lib/apt/lists/*
+CMD ["sleep", "infinity"]

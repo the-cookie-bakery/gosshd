@@ -1,0 +1,131 @@
+package session
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+
+	"github.com/pkg/sftp"
+	"golang.org/x/sys/unix"
+
+	"github.com/cookiengineer/gosshd/internal/privsep"
+)
+
+type readWriteCloser struct {
+	io.Reader
+	io.Writer
+}
+
+func (r readWriteCloser) Close() error {
+	return nil
+}
+
+func Run(spec *privsep.SessionSpec) error {
+	_ = unix.Umask(0o077)
+	_ = unix.Setrlimit(unix.RLIMIT_CORE, &unix.Rlimit{Cur: 0, Max: 0})
+	_ = unix.Setrlimit(unix.RLIMIT_NOFILE, &unix.Rlimit{Cur: 4096, Max: 4096})
+	if spec.Chroot != "" {
+		if err := syscall.Chroot(spec.Chroot); err != nil {
+			return fmt.Errorf("chroot: %w", err)
+		}
+		if err := os.Chdir("/"); err != nil {
+			return err
+		}
+	}
+	groups := make([]int, 0, len(spec.Groups)+1)
+	groups = append(groups, int(spec.GID))
+	for _, g := range spec.Groups {
+		if g != spec.GID {
+			groups = append(groups, int(g))
+		}
+	}
+	if err := syscall.Setgroups(groups); err != nil {
+		return fmt.Errorf("setgroups: %w", err)
+	}
+	if err := syscall.Setgid(int(spec.GID)); err != nil {
+		return fmt.Errorf("setgid: %w", err)
+	}
+	if err := syscall.Setuid(int(spec.UID)); err != nil {
+		return fmt.Errorf("setuid: %w", err)
+	}
+	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
+		return fmt.Errorf("no_new_privs: %w", err)
+	}
+	env := spec.Env
+	if spec.Command == "" || len(env) == 0 {
+		env = ensureEnv(env)
+	}
+	if err := os.Chdir(spec.Home); err != nil {
+		_ = os.Chdir("/")
+	}
+	switch {
+	case spec.Subsystem == "sftp" && (spec.SubsystemCommand == "" || spec.SubsystemCommand == "internal-sftp"):
+		rwc := readWriteCloser{Reader: os.Stdin, Writer: os.Stdout}
+		srv, err := sftp.NewServer(rwc, sftp.WithServerWorkingDirectory(mustGetwd()))
+		if err != nil {
+			return err
+		}
+		err = srv.Serve()
+		_ = srv.Close()
+		return err
+	case spec.Subsystem != "":
+		return execShell("/bin/sh", []string{"sh", "-c", spec.SubsystemCommand}, env)
+	case spec.Command != "":
+		shell := spec.Shell
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+		return execShell(shell, []string{filepath.Base(shell), "-c", spec.Command}, env)
+	default:
+		shell := spec.Shell
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+		argv0 := "-" + filepath.Base(shell)
+		return execShell(shell, []string{argv0}, env)
+	}
+}
+
+func execShell(path string, argv []string, env []string) error {
+	if path == "" {
+		return errors.New("empty shell")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return err
+	}
+	return syscall.Exec(path, argv, env)
+}
+
+func ensureEnv(env []string) []string {
+	hasPath := false
+	hasHome := false
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") {
+			hasPath = true
+		}
+		if strings.HasPrefix(e, "HOME=") {
+			hasHome = true
+		}
+	}
+	if !hasPath {
+		env = append(env, "PATH=/usr/local/bin:/usr/bin:/bin")
+	}
+	if !hasHome {
+		if h, err := os.UserHomeDir(); err == nil {
+			env = append(env, "HOME="+h)
+		}
+	}
+	return env
+}
+
+func mustGetwd() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "/"
+	}
+	return wd
+}

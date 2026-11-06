@@ -1,0 +1,12 @@
+FROM fedora:41
+RUN dnf install -y \
+    ca-certificates \
+    openssh-clients \
+    shadow-utils \
+    procps-ng \
+    iproute \
+    util-linux \
+    coreutils \
+    bash \
+ && dnf clean all
+CMD ["sleep", "infinity"]
