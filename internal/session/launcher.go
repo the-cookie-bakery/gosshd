@@ -72,18 +72,32 @@ func Run(spec *privsep.SessionSpec) error {
 	if !spec.NoUserRC && spec.Subsystem == "" {
 		runUserRC(spec)
 	}
-	switch {
-	case spec.Subsystem == "sftp" && (spec.SubsystemCommand == "" || spec.SubsystemCommand == "internal-sftp"):
-		rwc := readWriteCloser{Reader: os.Stdin, Writer: os.Stdout}
-		srv, err := sftp.NewServer(rwc, sftp.WithServerWorkingDirectory(mustGetwd()))
+	if spec.Subsystem != "" {
+		opts, internal, err := parseInternalSFTP(spec.SubsystemCommand)
 		if err != nil {
 			return err
 		}
-		err = srv.Serve()
-		_ = srv.Close()
-		return err
-	case spec.Subsystem != "":
+		if internal {
+			startDir := opts.StartDir
+			if startDir == "" {
+				startDir = mustGetwd()
+			}
+			serverOpts := []sftp.ServerOption{sftp.WithServerWorkingDirectory(startDir)}
+			if opts.ReadOnly {
+				serverOpts = append(serverOpts, sftp.ReadOnly())
+			}
+			rwc := readWriteCloser{Reader: os.Stdin, Writer: os.Stdout}
+			srv, err := sftp.NewServer(rwc, serverOpts...)
+			if err != nil {
+				return err
+			}
+			err = srv.Serve()
+			_ = srv.Close()
+			return err
+		}
 		return execShell("/bin/sh", []string{"sh", "-c", spec.SubsystemCommand}, env)
+	}
+	switch {
 	case spec.Command != "":
 		shell := spec.Shell
 		if shell == "" {

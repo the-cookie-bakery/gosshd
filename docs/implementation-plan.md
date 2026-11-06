@@ -203,12 +203,12 @@ The session layer supports:
 - `~/.ssh/rc` / `/etc/ssh/sshrc`, MOTD, last-login rendering, and `SSH_CLIENT`/`SSH_CONNECTION`
 - forced commands from configuration, authorized_keys, and certificates
 - `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory`
-- internal SFTP through `github.com/pkg/sftp`
+- internal SFTP through `github.com/pkg/sftp`, including read-only mode (`-R`) and start directory (`-d`)
 - configured external subsystems
 
 Not yet implemented:
 
-- SFTP limits, read-only mode, and fuzz coverage
+- SFTP resource limits and deeper fuzz coverage
 
 ## 8. Privilege separation model
 

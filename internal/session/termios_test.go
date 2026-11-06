@@ -35,3 +35,31 @@ func TestApplyTerminalMode(t *testing.T) {
 		t.Fatalf("Ispeed=%d", term.Ispeed)
 	}
 }
+
+func TestParseInternalSFTP(t *testing.T) {
+	opts, internal, err := parseInternalSFTP("internal-sftp -R -d /home/user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !internal || !opts.ReadOnly || opts.StartDir != "/home/user" {
+		t.Fatalf("internal=%v opts=%+v", internal, opts)
+	}
+	if _, internal, err := parseInternalSFTP("/usr/lib/openssh/sftp-server"); err != nil || internal {
+		t.Fatalf("external subsystem: internal=%v err=%v", internal, err)
+	}
+	if _, _, err := parseInternalSFTP("internal-sftp -d"); err == nil {
+		t.Fatal("expected missing -d argument to be rejected")
+	}
+	if _, _, err := parseInternalSFTP("internal-sftp -Z"); err == nil {
+		t.Fatal("expected unknown option to be rejected")
+	}
+}
+
+func FuzzParseInternalSFTP(f *testing.F) {
+	f.Add("internal-sftp")
+	f.Add("internal-sftp -R -d /home/user")
+	f.Add("/usr/lib/openssh/sftp-server")
+	f.Fuzz(func(t *testing.T, command string) {
+		_, _, _ = parseInternalSFTP(command)
+	})
+}

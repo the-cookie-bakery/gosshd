@@ -112,9 +112,9 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | SESS-10 | Session max-channel and concurrent-session enforcement | Done | `MaxSessions` enforced in monitor | `auth` suite covers the limit |
 | SESS-11 | Session unit tests for request parsing, env filtering, exit status, and signals | Partial | `TestBuildEnv`, `TestApplyTerminalMode`, `TestReadMotd`, `TestReadLastLog` | Exit status and signals covered by `smoke` E2E |
 | SFTP-01 | In-process `internal-sftp` subsystem | Done | No dedicated unit test | SFTP write/read in smoke suite |
-| SFTP-02 | Configured external subsystem execution | Partial | Implemented via `/bin/sh -c`; no test | Not covered |
-| SFTP-03 | SFTP chroot and permission behavior | Partial | Relies on session chroot and OS permissions | Not covered |
-| SFTP-04 | SFTP packet limits, read-only mode, and fuzz coverage | Pending | None | Not covered |
+| SFTP-02 | Configured external subsystem execution | Done | `sftp` suite runs a configured external subsystem | Passing |
+| SFTP-03 | SFTP chroot and permission behavior | Done | `sftp` suite writes through chrooted internal SFTP | Passing |
+| SFTP-04 | SFTP packet limits, read-only mode, and fuzz coverage | Partial | `internal-sftp -R`/`-d` parsing, read-only E2E, and parser fuzz target; pkg/sftp enforces packet length limits | Read-only and chroot paths covered |
 
 ### 3.6 End-to-end test coverage and CI
 
