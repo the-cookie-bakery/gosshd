@@ -197,9 +197,10 @@ Directives that relate to forwarding are parsed and acknowledged but forwarding 
 The session layer supports:
 
 - `pty-req`, `env`, `shell`, `exec`, `subsystem`, `window-change`, and `signal`
-- PTY allocation, terminal sizing, stdout/stderr handling, and exit status
+- PTY allocation, terminal sizing, terminal mode application, stdout/stderr handling, and exit status
 - client-alive keepalives, TCP keepalive, `keepalive@openssh.com`, and `no-more-sessions@openssh.com`
 - environment filtering through `AcceptEnv`, `SetEnv`, and `PermitUserEnvironment`
+- `~/.ssh/rc` / `/etc/ssh/sshrc`, MOTD, last-login rendering, and `SSH_CLIENT`/`SSH_CONNECTION`
 - forced commands from configuration, authorized_keys, and certificates
 - `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory`
 - internal SFTP through `github.com/pkg/sftp`
@@ -207,11 +208,7 @@ The session layer supports:
 
 Not yet implemented:
 
-- `~/.ssh/rc` and `/etc/ssh/sshrc`
-- MOTD and last-login rendering
-- full terminal mode application from `pty-req`
 - SFTP limits, read-only mode, and fuzz coverage
-- complete chroot path ownership validation
 
 ## 8. Privilege separation model
 

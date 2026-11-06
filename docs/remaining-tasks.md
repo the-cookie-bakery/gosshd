@@ -103,14 +103,14 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | SESS-01 | `pty-req`, `shell`, `exec`, `subsystem`, `window-change`, `signal` handling | Done | No dedicated unit test | Exec and PTY execution in smoke suite |
 | SESS-02 | PTY allocation, resize, and exit status propagation | Done | No dedicated unit test | PTY execution in smoke suite |
 | SESS-03 | Environment filtering through `AcceptEnv`, `SetEnv`, `PermitUserEnvironment` | Done | No dedicated unit test | Not covered |
-| SESS-04 | `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory` | Partial | No dedicated unit test | Not covered |
-| SESS-05 | `~/.ssh/rc` and `/etc/ssh/sshrc` execution | Pending | Parsed `PermitUserRC`; no execution | Not covered |
-| SESS-06 | MOTD and last-login rendering | Pending | Parsed `PrintMotd` / `PrintLastLog`; no rendering | Not covered |
-| SESS-07 | Apply terminal modes from `pty-req` | Partial | Request parsed; modes not fully applied | Not covered |
+| SESS-04 | `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory` | Partial | `auth` suite covers ForceCommand, PermitTTY, and MaxSessions | `ChrootDirectory` session E2E still pending |
+| SESS-05 | `~/.ssh/rc` and `/etc/ssh/sshrc` execution | Done | Executed before shell/command with `SSH_CLIENT`/`SSH_CONNECTION`; `TestUserRC` covers enabled/disabled | `auth` suite verifies rc execution and `PermitUserRC no` |
+| SESS-06 | MOTD and last-login rendering | Done | `readMotd`, `readLastLog`, and `logininfo` unit tests | `auth` suite verifies MOTD and last-login output |
+| SESS-07 | Apply terminal modes from `pty-req` | Done | RFC 4254 mode decoder and termios application with unit tests | `auth` suite uses `stty -a` to verify ECHO changes |
 | SESS-08 | Client-alive messages and disconnect threshold | Done | Keepalive state machine unit tests; liveness treats any reply as alive | `interop` suite keeps a session alive across the interval |
 | SESS-09 | Global request handling: keepalive, `no-more-sessions@openssh.com` | Done | Dedicated handler replies to keepalive, latches no-more-sessions, rejects forwarding globals | `interop` suite covers no-more-sessions and forwarding rejection |
-| SESS-10 | Session max-channel and concurrent-session enforcement | Partial | `MaxSessions` is enforced in monitor | Not covered |
-| SESS-11 | Session unit tests for request parsing, env filtering, exit status, and signals | Pending | None | Needed |
+| SESS-10 | Session max-channel and concurrent-session enforcement | Done | `MaxSessions` enforced in monitor | `auth` suite covers the limit |
+| SESS-11 | Session unit tests for request parsing, env filtering, exit status, and signals | Partial | `TestBuildEnv`, `TestApplyTerminalMode`, `TestReadMotd`, `TestReadLastLog` | Exit status and signals covered by `smoke` E2E |
 | SFTP-01 | In-process `internal-sftp` subsystem | Done | No dedicated unit test | SFTP write/read in smoke suite |
 | SFTP-02 | Configured external subsystem execution | Partial | Implemented via `/bin/sh -c`; no test | Not covered |
 | SFTP-03 | SFTP chroot and permission behavior | Partial | Relies on session chroot and OS permissions | Not covered |

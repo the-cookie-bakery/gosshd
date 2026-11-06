@@ -48,8 +48,12 @@ type SessionSpec struct {
 	Chroot           string
 	Env              []string
 	Remote           string
+	Local            string
 	NoUserRC         bool
 	Pty              bool
+	Modes            string
+	Motd             string
+	LastLog          string
 }
 
 type session struct {
@@ -552,14 +556,23 @@ func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Pack
 	if err != nil {
 		return "", err
 	}
-	env := m.buildEnv(cfg, p.Env, perms)
+	env := m.buildEnv(cfg, p.Env, perms, st.remote, st.local)
 	spec := SessionSpec{
 		UID: perms.UID, GID: perms.GID, Groups: nil,
 		Home: perms.Home, Shell: perms.Shell,
 		Command: command, Subsystem: subsystem, SubsystemCommand: cfg.Subsystems[subsystem],
 		Chroot: chroot, Env: env,
-		Remote: addrString(st.remote), NoUserRC: perms.NoUserRC || !cfg.PermitUserRC,
-		Pty: p.Pty,
+		Remote: addrString(st.remote), Local: addrString(st.local),
+		NoUserRC: perms.NoUserRC || !cfg.PermitUserRC,
+		Pty:      p.Pty, Modes: p.Modes,
+	}
+	if p.Pty && command == "" && subsystem == "" {
+		if cfg.PrintLastLog {
+			spec.LastLog = readLastLog("/var/log/lastlog", perms.UID)
+		}
+		if cfg.PrintMotd {
+			spec.Motd = readMotd("/etc/motd")
+		}
 	}
 	for _, g := range perms.Groups {
 		if gu, err := nss.LookupGroup(g); err == nil {
@@ -578,6 +591,9 @@ func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Pack
 		master = mf
 		workerFiles = []*os.File{mf}
 		childIn, childOut, childErr = sf, sf, sf
+		if tty, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", sf.Fd())); err == nil && tty != "" {
+			spec.Env = append(spec.Env, "SSH_TTY="+tty)
+		}
 		if p.Width > 0 && p.Height > 0 {
 			_ = pty.Setsize(mf, &pty.Winsize{Cols: uint16(p.Width), Rows: uint16(p.Height)})
 		}
@@ -667,13 +683,19 @@ func closeFiles(files ...*os.File) {
 	}
 }
 
-func (m *Monitor) buildEnv(cfg *config.Config, clientEnv []string, perms *auth.Permissions) []string {
+func (m *Monitor) buildEnv(cfg *config.Config, clientEnv []string, perms *auth.Permissions, remote, local net.Addr) []string {
 	env := []string{
 		"HOME=" + perms.Home,
 		"USER=" + perms.Username,
 		"LOGNAME=" + perms.Username,
 		"SHELL=" + perms.Shell,
 		"PATH=/usr/local/bin:/usr/bin:/bin",
+	}
+	if value := sshConnectionString(remote, local); value != "" {
+		env = append(env, "SSH_CONNECTION="+value)
+	}
+	if value := sshClientString(remote, local); value != "" {
+		env = append(env, "SSH_CLIENT="+value)
 	}
 	for k, v := range cfg.SetEnv {
 		env = append(env, k+"="+v)
@@ -693,6 +715,35 @@ func (m *Monitor) buildEnv(cfg *config.Config, clientEnv []string, perms *auth.P
 		}
 	}
 	return dedupeEnv(env)
+}
+
+func sshConnectionString(remote, local net.Addr) string {
+	rh, rp := splitHostPort(remote)
+	lh, lp := splitHostPort(local)
+	if rh == "" || lh == "" {
+		return ""
+	}
+	return rh + " " + rp + " " + lh + " " + lp
+}
+
+func sshClientString(remote, local net.Addr) string {
+	rh, rp := splitHostPort(remote)
+	_, lp := splitHostPort(local)
+	if rh == "" {
+		return ""
+	}
+	return rh + " " + rp + " " + lp
+}
+
+func splitHostPort(addr net.Addr) (string, string) {
+	if addr == nil {
+		return "", ""
+	}
+	host, port, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return addr.String(), ""
+	}
+	return host, port
 }
 
 func matchAny(patterns []string, key string) bool {

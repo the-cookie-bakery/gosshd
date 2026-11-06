@@ -49,6 +49,8 @@ type Packet struct {
 	Signal    int
 	Env       []string
 	Remote    string
+	Local     string
+	Modes     string
 }
 
 type PacketConn struct {

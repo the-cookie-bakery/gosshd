@@ -1,7 +1,9 @@
 package privsep
 
 import (
+	"net"
 	"os/user"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,5 +117,38 @@ func TestSessionStateIsolation(t *testing.T) {
 	}
 	if st2.getSession("shared") != nil {
 		t.Fatal("session leaked between connection states")
+	}
+}
+
+func TestBuildEnv(t *testing.T) {
+	cfg := config.Default()
+	cfg.AcceptEnv = []string{"LANG"}
+	cfg.SetEnv = map[string]string{"FOO": "bar"}
+	cfg.PermitUserEnvironment = "yes"
+	m := &Monitor{cfg: cfg}
+	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 1234}
+	local := &net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 22}
+	env := m.buildEnv(cfg, []string{"LANG=en_US.UTF-8", "TERM=xterm", "SECRET=x"}, &auth.Permissions{
+		Username:    "alice",
+		Home:        "/home/alice",
+		Shell:       "/bin/sh",
+		Environment: []string{"USERENV=1"},
+	}, remote, local)
+	for _, want := range []string{"LANG=en_US.UTF-8", "TERM=xterm", "FOO=bar", "USERENV=1", "SSH_CONNECTION=192.0.2.10 1234 192.0.2.1 22", "SSH_CLIENT=192.0.2.10 1234 22"} {
+		found := false
+		for _, kv := range env {
+			if kv == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in %v", want, env)
+		}
+	}
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "SECRET=") {
+			t.Fatalf("unexpected env %q", kv)
+		}
 	}
 }

@@ -383,6 +383,7 @@ type sessionHandler struct {
 	term      string
 	cols      uint32
 	rows      uint32
+	modes     string
 	env       []string
 	mu        sync.Mutex
 }
@@ -416,6 +417,7 @@ func handleSession(conn *ssh.ServerConn, ch ssh.Channel, requests <-chan *ssh.Re
 			h.term = r.Term
 			h.cols = r.Cols
 			h.rows = r.Rows
+			h.modes = r.Modes
 			h.mu.Unlock()
 			req.Reply(true, nil)
 		case "env":
@@ -526,12 +528,13 @@ func (h *sessionHandler) start(command, subsystem string) (func(), error) {
 	pty := h.pty
 	term := h.term
 	cols, rows := h.cols, h.rows
+	modes := h.modes
 	env := append([]string(nil), h.env...)
 	h.mu.Unlock()
 	res, fds, err := h.rpc.call(&Packet{
 		Type: "session_open", User: h.conn.User(), Pty: pty, Term: term,
 		Width: cols, Height: rows, Command: command, Subsystem: subsystem,
-		Env: env, Remote: h.conn.RemoteAddr().String(),
+		Env: env, Remote: h.conn.RemoteAddr().String(), Modes: modes,
 	})
 	if err != nil {
 		return nil, err

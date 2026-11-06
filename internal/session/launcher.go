@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -62,6 +63,15 @@ func Run(spec *privsep.SessionSpec) error {
 	if err := os.Chdir(spec.Home); err != nil {
 		_ = os.Chdir("/")
 	}
+	if spec.Pty {
+		_ = applyTerminalModes(0, spec.Modes)
+	}
+	if spec.Command == "" && spec.Subsystem == "" {
+		writeLoginInfo(spec)
+	}
+	if !spec.NoUserRC && spec.Subsystem == "" {
+		runUserRC(spec)
+	}
 	switch {
 	case spec.Subsystem == "sftp" && (spec.SubsystemCommand == "" || spec.SubsystemCommand == "internal-sftp"):
 		rwc := readWriteCloser{Reader: os.Stdin, Writer: os.Stdout}
@@ -87,6 +97,40 @@ func Run(spec *privsep.SessionSpec) error {
 		}
 		argv0 := "-" + filepath.Base(shell)
 		return execShell(shell, []string{argv0}, env)
+	}
+}
+
+func writeLoginInfo(spec *privsep.SessionSpec) {
+	if spec.LastLog != "" {
+		_, _ = io.WriteString(os.Stdout, spec.LastLog)
+	}
+	if spec.Motd != "" {
+		_, _ = io.WriteString(os.Stdout, spec.Motd)
+		if !strings.HasSuffix(spec.Motd, "\n") {
+			_, _ = io.WriteString(os.Stdout, "\n")
+		}
+	}
+}
+
+func runUserRC(spec *privsep.SessionSpec) {
+	rc := filepath.Join(spec.Home, ".ssh", "rc")
+	if _, err := os.Stat(rc); err != nil {
+		rc = "/etc/ssh/sshrc"
+		if _, err := os.Stat(rc); err != nil {
+			return
+		}
+	}
+	shell := spec.Shell
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	cmd := exec.Command(shell, "-c", rc)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = spec.Env
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "rc: %v\n", err)
 	}
 }
 
