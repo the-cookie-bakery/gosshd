@@ -63,8 +63,11 @@ Add a host key file.
 Run in inetd mode using standard input as the connection.
 .TP
 .BI \-o " option"
-Apply a configuration option. May be repeated in the file but only one
-command-line option is accepted.
+Apply a configuration option. May be repeated. Both
+.IB keyword " value"
+and
+.IB keyword = value
+forms are accepted.
 .TP
 .BI \-p " port"
 Override the listening port.
@@ -73,10 +76,10 @@ Override the listening port.
 Test the configuration and exit.
 .TP
 .B \-T
-Print the effective configuration as JSON and exit. This is not the same
-format as OpenSSH's
-.BR sshd (8)
-output.
+Print the effective configuration as lowercase
+.IB keyword " value"
+lines and exit. Match blocks are not evaluated; only global values are
+printed.
 .TP
 .B \-V
 Print the version and exit.

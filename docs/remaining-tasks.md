@@ -46,11 +46,12 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Done | Command execution and principal parsing share the validated command path; unit tests | `cert` suite logs in via command-provided principals |
 | CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Done | Parsed alternatives, startup validation, per-connection auth-progress state machine, and `PartialSuccessError` callbacks; unit tests cover completion/partial/wrong-order cases | `auth` suite covers publickey+password success, single-factor failure, and wrong second factor |
 | CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*`, `TCPKeepAlive`, `MaxStartups`, and `Banner` are applied; `Compression yes` or `delayed` and `UseDNS yes` are rejected; forwarding options remain acknowledged only because forwarding is disabled | `interop` exercises client-alive and TCP keepalive paths |
-| CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` validates command paths/users and host-key permissions; `-T` dumps JSON rather than OpenSSH text | `config` suite covers negative host-key permission cases |
+| CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Done | `-t` validates command paths/users and host-key permissions; `-T` emits lowercase keyword/value text; repeated `-o` and `keyword=value` forms | `config` suite covers `-T` defaults, overrides, and negative host-key permission cases |
 | CFG-09 | Match/Include E2E fixtures | Done | `config`, `auth`, and existing Include fixtures | Passing |
 | CFG-10 | `Banner` file delivery before authentication | Done | `TestLoadBanner`; banner parsing test | `auth` suite verifies banner delivery |
 | CFG-11 | Reject unsupported `UseDNS yes` and `Compression yes` or `delayed` | Done | `TestUseDNSAndCompressionTruthfulness` | `config` suite rejects both settings |
 | CFG-12 | Full `MaxStartups start:rate:full` pre-authentication accounting | Done | `TestMaxStartupsParsing`, `TestAcceptStartupBoundaries`, `TestAcceptStartupRandomDrop` | `config` suite accepts triples and rejects invalid ordering |
+| CFG-13 | Truthful `RekeyLimit` time handling and rejection of unsupported authentication enables | Done | `TestRekeyLimitTruthfulness`, `TestUnsupportedAuthMethodsRejected` | `config` suite rejects time components and unsupported `yes` values |
 
 ### 3.2 Cryptography and host keys
 
@@ -118,7 +119,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | SFTP-01 | In-process `internal-sftp` subsystem | Done | No dedicated unit test | SFTP write/read in smoke suite |
 | SFTP-02 | Configured external subsystem execution | Done | `sftp` suite runs a configured external subsystem | Passing |
 | SFTP-03 | SFTP chroot and permission behavior | Done | `sftp` suite writes through chrooted internal SFTP | Passing |
-| SFTP-04 | SFTP packet limits, read-only mode, and fuzz coverage | Partial | `internal-sftp -R`/`-d` parsing, read-only E2E, and parser fuzz target; pkg/sftp enforces packet length limits | Read-only and chroot paths covered |
+| SFTP-04 | SFTP packet limits, read-only mode, and fuzz coverage | Done | `internal-sftp -R`/`-d` parsing, read-only E2E, deeper option fuzz seeds; pkg/sftp enforces a 32 KiB packet limit | Read-only and chroot paths covered |
 
 ### 3.6 End-to-end test coverage
 
@@ -173,13 +174,6 @@ The following areas are implemented and have at least smoke or unit verification
 
 ## 5. Remaining work
 
-### Milestone F: operations and compatibility
-
-1. Add hosted CI that runs `make ci` and the Podman E2E matrix.
-2. Implement OpenSSH-compatible `-T` text output and repeated `-o` options.
-3. Extend fuzzing to certificate parsing and deeper SFTP handling.
-4. Reassess `RekeyLimit` time components and enabling directives for unsupported authentication methods.
-
 ### Milestone G: optional PAM backend
 
 1. Implement the `PasswordVerifier` PAM backend behind the existing interface.
@@ -196,7 +190,7 @@ The v1 definition of done refers to P0/P1 work. Status rows do not carry a prior
 
 ### P1: v1 scope
 
-`AUTH-04`, `AUTH-05`, `AUTH-07`, `AUTH-08`, `AUTH-09`, `CFG-04`, `CFG-05`, `CFG-07`, `CFG-08`, `CFG-09`, `CFG-10`, `CFG-11`, `CFG-12`, `CRY-03`, `CRY-05`, `CRY-07`, `PRIV-04`, `PRIV-07`, `PRIV-10`, `SESS-04`, `SESS-05`, `SESS-06`, `SESS-07`, `SESS-10`, `SESS-11`, `SFTP-02`, `SFTP-03`, `SFTP-04`, `E2E-07`, `E2E-08`, `E2E-11`, `E2E-12`, `OPS-02`, `OPS-03`, `OPS-04`, `OPS-05`, `OPS-07`
+`AUTH-04`, `AUTH-05`, `AUTH-07`, `AUTH-08`, `AUTH-09`, `CFG-04`, `CFG-05`, `CFG-07`, `CFG-08`, `CFG-09`, `CFG-10`, `CFG-11`, `CFG-12`, `CFG-13`, `CRY-03`, `CRY-05`, `CRY-07`, `PRIV-04`, `PRIV-07`, `PRIV-10`, `SESS-04`, `SESS-05`, `SESS-06`, `SESS-07`, `SESS-10`, `SESS-11`, `SFTP-02`, `SFTP-03`, `SFTP-04`, `E2E-07`, `E2E-08`, `E2E-11`, `E2E-12`, `OPS-02`, `OPS-03`, `OPS-04`, `OPS-05`, `OPS-07`
 
 ### P2 and deferred
 

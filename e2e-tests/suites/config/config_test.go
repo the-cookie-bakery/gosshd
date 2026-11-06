@@ -63,6 +63,9 @@ func TestUnsupportedDirectivesRejected(t *testing.T) {
 		"compression":   "Compression delayed\n",
 		"weak-ca":       "CASignatureAlgorithms ssh-rsa\n",
 		"startup-order": "MaxStartups 20:30:10\n",
+		"rekey-time":    "RekeyLimit 1G 1h\n",
+		"hostbased":     "HostbasedAuthentication yes\n",
+		"gssapi":        "GSSAPIAuthentication yes\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -95,14 +98,27 @@ func TestDumpDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("-T: %v: %s", err, out)
 	}
-	if !strings.Contains(string(out), `"RequiredRSASize": 2048`) {
-		t.Fatalf("RequiredRSASize default missing: %s", out)
+	for _, want := range []string{"port 22\n", "maxstartups 10:30:100\n", "requiredrsasize 2048\n", "casignaturealgorithms "} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("%q missing from -T output: %s", want, out)
+		}
 	}
-	if !strings.Contains(string(out), `"MaxStartupsRate": 30`) || !strings.Contains(string(out), `"MaxStartupsFull": 100`) {
-		t.Fatalf("MaxStartups defaults missing: %s", out)
+}
+
+func TestDumpOverrides(t *testing.T) {
+	bin := requireBin(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", fmt.Sprintf("HostKey %s\n", hostPath))
+	cmd := exec.Command(bin, "-T", "-f", cfgPath, "-o", "Port 2222", "-o", "PasswordAuthentication=no")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("-T: %v: %s", err, out)
 	}
-	if !strings.Contains(string(out), `"CASignatureAlgorithms"`) {
-		t.Fatalf("CASignatureAlgorithms default missing: %s", out)
+	for _, want := range []string{"port 2222\n", "passwordauthentication no\n"} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("%q missing from -T output: %s", want, out)
+		}
 	}
 }
 

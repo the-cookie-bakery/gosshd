@@ -58,7 +58,13 @@ func TestParseInternalSFTP(t *testing.T) {
 func FuzzParseInternalSFTP(f *testing.F) {
 	f.Add("internal-sftp")
 	f.Add("internal-sftp -R -d /home/user")
+	f.Add("internal-sftp -u 022")
+	f.Add("internal-sftp -l ERROR")
+	f.Add("internal-sftp -e -R")
+	f.Add("internal-sftp -d")
+	f.Add("internal-sftp -R -Z")
 	f.Add("/usr/lib/openssh/sftp-server")
+	f.Add("/usr/lib/openssh/sftp-server -R")
 	f.Fuzz(func(t *testing.T, command string) {
 		_, _, _ = parseInternalSFTP(command)
 	})

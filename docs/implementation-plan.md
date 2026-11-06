@@ -188,7 +188,7 @@ The parser currently supports:
 - explicit rejection of unknown keywords
 - explicit rejection of directives that try to re-enable weak cryptography
 - explicit rejection of unsupported behavior-changing values: `UseDNS yes`, `Compression yes`, and `Compression delayed`
-- host-key permission validation (`-t`/startup); `-T` currently emits JSON rather than OpenSSH text
+- host-key permission validation (`-t`/startup); `-T` emits lowercase effective keyword/value text and supports repeated `-o` overrides
 
 Not yet implemented:
 
@@ -231,11 +231,6 @@ Implemented:
 - host private keys are not loaded by workers
 - worker RPC protocol bounds message size and uses fd passing
 
-Remaining hardening:
-
-- extend fuzzing to certificate parsing and deeper SFTP paths
-- add hosted CI and container leak checks
-
 ## 9. End-to-end test harness
 
 Directory layout:
@@ -264,7 +259,7 @@ Suites verify:
 - `smoke`: password/public-key auth, exec, PTY, concurrent sessions, signals, internal SFTP
 - `auth`: wrong password, hash variants, locked/expired/unknown accounts, allow/deny users, authorized_keys options, disabled auth methods, keyboard-interactive success and gating
 - `privsep`: worker and session uid separation
-- `config`: Include/recursion, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, `-T` defaults
+- `config`: Include/recursion, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, `-T` defaults and overrides
 - `cert`: trusted user CA, principals file, revocation, `cert-authority` in `authorized_keys`, certificate force-command, host certificates
 - `interop`: real `ssh`/`scp`/`sftp`, exit status, PTY, client-alive longevity, `no-more-sessions`, and forwarding rejection
 - `sftp`: external subsystem, chroot, and read-only internal SFTP
@@ -280,12 +275,12 @@ Status values are defined in [remaining-tasks.md](./remaining-tasks.md).
 | 1 | RFC references, module skeleton, repository layout | Done | Build succeeds | N/A |
 | 2 | Config parser, crypto policy, host-key loading | Done for core directives, including Match, Banner, CA signature policy, and full MaxStartups semantics | `internal/config`, `internal/crypto` tests | Config exercised by smoke/auth/config suites |
 | 3 | NSS/shadow/crypt authentication and access policy | Done for crypt-only path | `internal/auth` tests; crypt path exercised in container | Password login in smoke suite |
-| 4 | authorized_keys, key options, certificates | Partial | Authorized-key option tests | Public-key login in smoke suite; certificates not yet in E2E |
-| 5 | Privsep monitor/worker/session launcher | Partial | No dedicated unit tests yet | Password/key/PTY/SFTP sessions in smoke suite |
-| 6 | PTY, shell, exec, environment, signals, exit status | Done for core paths | No dedicated PTY unit tests | PTY and exec in smoke suite |
-| 7 | Internal SFTP and external subsystems | Partial | No dedicated SFTP unit tests | SFTP write/read in smoke suite |
-| 8 | Podman harness and container images | Done | Harness has no unit tests | Debian/Ubuntu/Fedora smoke matrix |
-| 9 | Hardening, fuzzing, CI, operations | Pending | `go vet` passes; fuzz/race/govulncheck pending | CI workflow pending |
+| 4 | authorized_keys, key options, certificates | Done | Authorized-key option tests; certificate signature enforcement tests | Public-key and certificate E2E suites pass |
+| 5 | Privsep monitor/worker/session launcher | Done | Isolated RPC, caps, chroot, and startup-limit tests | Password/key/PTY/SFTP sessions and privsep E2E pass |
+| 6 | PTY, shell, exec, environment, signals, exit status | Done | Session, terminal-mode, env, and login-info tests | PTY and exec in smoke suite |
+| 7 | Internal SFTP and external subsystems | Done | Internal-SFTP option parsing and fuzz coverage | SFTP write/read, chroot, and read-only E2E pass |
+| 8 | Podman harness and container images | Done | Harness unit tests for cleanup and artifact retention | Debian/Ubuntu/Fedora full matrix |
+| 9 | Hardening, fuzzing, operations | Done for current scope | Race, staticcheck, govulncheck, and fuzz targets | Full E2E matrix passes |
 
 ## 11. Definition of done for v1
 

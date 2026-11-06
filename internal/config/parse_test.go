@@ -365,3 +365,58 @@ func TestMatchRejectsGlobalOnlyTruthfulnessDirectives(t *testing.T) {
 		}
 	}
 }
+
+func TestParseOptionEquals(t *testing.T) {
+	cfg := Default()
+	if err := ParseOption(cfg, "PasswordAuthentication=no"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PasswordAuthentication {
+		t.Fatal("PasswordAuthentication=no was not applied")
+	}
+	if err := ParseOption(cfg, "SetEnv=FOO=bar"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SetEnv["FOO"] != "bar" {
+		t.Fatalf("SetEnv=%v", cfg.SetEnv)
+	}
+	if err := ParseOption(cfg, "Port=2222"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Port != 2222 {
+		t.Fatalf("Port=%d", cfg.Port)
+	}
+}
+
+func TestRekeyLimitTruthfulness(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("RekeyLimit 1G\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RekeyLimit != 1024*1024*1024 {
+		t.Fatalf("RekeyLimit=%d", cfg.RekeyLimit)
+	}
+	for _, input := range []string{"RekeyLimit 1G 1h\n", "RekeyLimit\n"} {
+		if _, err := ParseReader(strings.NewReader(input), "test"); err == nil {
+			t.Fatalf("expected %q to be rejected", strings.TrimSpace(input))
+		}
+	}
+}
+
+func TestUnsupportedAuthMethodsRejected(t *testing.T) {
+	for _, name := range []string{
+		"HostbasedAuthentication",
+		"GSSAPIAuthentication",
+		"KerberosAuthentication",
+		"RhostsRSAAuthentication",
+		"RSAAuthentication",
+		"SKeyAuthentication",
+	} {
+		if _, err := ParseReader(strings.NewReader(name+" yes\n"), "test"); err == nil {
+			t.Fatalf("expected %s yes to be rejected", name)
+		}
+		if _, err := ParseReader(strings.NewReader(name+" no\n"), "test"); err != nil {
+			t.Fatalf("%s no should be accepted: %v", name, err)
+		}
+	}
+}

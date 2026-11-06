@@ -67,6 +67,11 @@ func ParseOption(cfg *Config, option string) error {
 	if len(fields) == 0 {
 		return &ParseError{Message: "empty option"}
 	}
+	if len(fields) == 1 {
+		if key, value, ok := strings.Cut(fields[0], "="); ok && key != "" {
+			fields = []string{key, value}
+		}
+	}
 	return p.apply(fields[0], fields[1:], "")
 }
 
@@ -591,16 +596,22 @@ func (p *parser) apply(key string, args []string, source string) error {
 		if p.first(k) {
 			p.cfg.CASignatureAlgorithms = splitComma(args)
 		}
-	case "rekeylimit", "fingerprinthash":
-		if k == "rekeylimit" && len(args) > 0 {
-			n, err := parseSize(args[0])
-			if err != nil {
-				return fmt.Errorf("invalid RekeyLimit %q", args[0])
-			}
-			if p.first(k) {
-				p.cfg.RekeyLimit = n
-			}
+	case "rekeylimit":
+		if len(args) == 0 {
+			return errors.New("missing RekeyLimit argument")
 		}
+		if len(args) > 1 {
+			return fmt.Errorf("rekey limit time components are not supported")
+		}
+		n, err := parseSize(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid RekeyLimit %q", args[0])
+		}
+		if p.first(k) {
+			p.cfg.RekeyLimit = n
+		}
+	case "fingerprinthash":
+		return nil
 	case "authenticationmethods":
 		if len(args) == 0 {
 			return errors.New("AuthenticationMethods requires an argument")
@@ -645,19 +656,27 @@ func (p *parser) apply(key string, args []string, source string) error {
 		if p.first(k) {
 			p.cfg.UsePAM = v
 		}
+	case "hostbasedauthentication", "gssapiauthentication", "kerberosauthentication",
+		"rhostsrsaauthentication", "rsaauthentication", "skeyauthentication":
+		v, err := yesNo()
+		if err != nil {
+			return err
+		}
+		if v {
+			return fmt.Errorf("%s is not supported; only publickey, password, and keyboard-interactive are available", key)
+		}
 	case "allowtcpforwarding", "allowagentforwarding", "allowstreamlocalforwarding",
 		"x11forwarding", "x11displayoffset", "x11uselocalhost",
 		"permitopen", "permitlisten", "gatewayports", "permittunnel",
 		"disableforwarding", "refuseconnection", "showpatchlevel",
 		"ipqos", "logverbose",
-		"gssapiauthentication", "gssapicleanupcredentials",
+		"gssapicleanupcredentials",
 		"gssapidelegatecredentials", "gssapistrictacceptorcheck",
-		"hostbasedauthentication", "hostbasedacceptedalgorithms",
+		"hostbasedacceptedalgorithms",
 		"hostbasedusesnamefrompacketonly", "ignorerhosts",
-		"ignoreuserknownhosts", "kerberosauthentication",
+		"ignoreuserknownhosts",
 		"kerberosgetafstoken", "kerberosorlocalpasswd",
-		"kerberosticketcleanup", "rhostsrsaauthentication",
-		"rsaauthentication", "skeyauthentication", "streamlocalbindmask",
+		"kerberosticketcleanup", "streamlocalbindmask",
 		"streamlocalbindunlink", "unusedconnectiontimeout", "modulifile":
 		return nil
 	default:

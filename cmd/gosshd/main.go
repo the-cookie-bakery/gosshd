@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"reflect"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -65,7 +66,8 @@ func run(args []string) int {
 	foreground := fs.Bool("D", false, "do not detach")
 	port := fs.Int("p", 0, "port")
 	hostKey := fs.String("h", "", "host key file")
-	option := fs.String("o", "", "configuration option")
+	var options optionFlags
+	fs.Var(&options, "o", "configuration option (repeatable)")
 	stderrLog := fs.Bool("e", false, "log to stderr")
 	inetd := fs.Bool("i", false, "inetd mode")
 	ipv4 := fs.Bool("4", false, "IPv4 only")
@@ -92,8 +94,8 @@ func run(args []string) int {
 		if *hostKey != "" {
 			cfg.HostKeys = append(cfg.HostKeys, *hostKey)
 		}
-		if *option != "" {
-			if err := config.ParseOption(cfg, *option); err != nil {
+		for _, option := range options {
+			if err := config.ParseOption(cfg, option); err != nil {
 				return nil, nil, nil, err
 			}
 		}
@@ -154,8 +156,10 @@ func run(args []string) int {
 	}
 	if *testConfig || *dumpConfig {
 		if *dumpConfig {
-			raw, _ := json.MarshalIndent(cfg, "", "  ")
-			fmt.Println(string(raw))
+			if err := cfg.WriteEffective(os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
 		} else {
 			fmt.Println("configuration OK")
 		}
@@ -322,4 +326,15 @@ func parseGrace(v string) (time.Duration, error) {
 		return 0, err
 	}
 	return time.Duration(n) * time.Second, nil
+}
+
+type optionFlags []string
+
+func (o *optionFlags) String() string {
+	return strings.Join(*o, ", ")
+}
+
+func (o *optionFlags) Set(value string) error {
+	*o = append(*o, value)
+	return nil
 }

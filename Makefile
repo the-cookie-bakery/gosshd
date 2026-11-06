@@ -34,6 +34,7 @@ govulncheck:
 fuzz:
 	$(GO) test -run=^$$ -fuzz=FuzzParseReader -fuzztime=10s ./internal/config
 	$(GO) test -run=^$$ -fuzz=FuzzScanAuthorizedKeys -fuzztime=10s ./internal/auth
+	$(GO) test -run=^$$ -fuzz=FuzzParseCertificate -fuzztime=10s ./internal/auth
 	$(GO) test -run=^$$ -fuzz=FuzzPacketDecode -fuzztime=10s ./internal/privsep
 	$(GO) test -run=^$$ -fuzz=FuzzParseInternalSFTP -fuzztime=10s ./internal/session
 
