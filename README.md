@@ -63,8 +63,12 @@ Useful environment variables:
 GOSSHD_E2E_IMAGES=debian,ubuntu,fedora
 GOSSHD_E2E_SUITES=smoke,auth,privsep,config,cert,interop,sftp,daemon
 GOSSHD_E2E_KEEP=1
+GOSSHD_E2E_ARTIFACTS=/path/to/artifacts
 GOSSHD_E2E_REQUIRE=1
 ```
+
+`GOSSHD_E2E_KEEP=1` also retains build artifacts and failure diagnostics under
+`e2e-tests/.artifacts` unless `GOSSHD_E2E_ARTIFACTS` overrides the location.
 
 ## Specifications
 

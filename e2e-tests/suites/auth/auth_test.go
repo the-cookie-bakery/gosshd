@@ -16,6 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-crypt/crypt/algorithm"
+	"github.com/go-crypt/crypt/algorithm/bcrypt"
+	"github.com/go-crypt/crypt/algorithm/scrypt"
+	"github.com/go-crypt/crypt/algorithm/shacrypt"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cookiengineer/gosshd/e2e-tests/suites/internal/sshdtest"
@@ -56,6 +60,54 @@ func TestWrongPasswordRejected(t *testing.T) {
 	client = sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.Password(u.Password)))
 	defer client.Close()
 	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+}
+
+func TestPasswordHashVariants(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	sha256Hasher, err := shacrypt.New(shacrypt.WithSHA256(), shacrypt.WithIterations(5000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha512Hasher, err := shacrypt.New(shacrypt.WithSHA512(), shacrypt.WithIterations(5000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bcryptHasher, err := bcrypt.New(bcrypt.WithCost(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	yescryptHasher, err := scrypt.NewYescrypt(scrypt.WithLN(10), scrypt.WithR(8), scrypt.WithP(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		prefix string
+		hasher interface {
+			Hash(string) (algorithm.Digest, error)
+		}
+	}{
+		{name: "sha256", prefix: "$5$", hasher: sha256Hasher},
+		{name: "sha512", prefix: "$6$", hasher: sha512Hasher},
+		{name: "bcrypt", prefix: "$2b$", hasher: bcryptHasher},
+		{name: "yescrypt", prefix: "$y$", hasher: yescryptHasher},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			digest, err := tc.hasher.Hash(u.Password)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hash := digest.Encode()
+			if !strings.HasPrefix(hash, tc.prefix) {
+				t.Fatalf("hash=%q, want prefix %q", hash, tc.prefix)
+			}
+			sshdtest.SetPasswordHash(t, u.Name, hash)
+			srv := startServer(t, u, "")
+			client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.Password(u.Password)))
+			client.Close()
+		})
+	}
 }
 
 func TestBannerDelivered(t *testing.T) {
@@ -179,6 +231,53 @@ func TestAuthorizedKeyOptions(t *testing.T) {
 			t.Fatal("expired key was accepted")
 		}
 	})
+
+	t.Run("environment", func(t *testing.T) {
+		u := sshdtest.NewUser(t)
+		signer, _ := sshdtest.NewKey(t)
+		u.WriteAuthorizedKeysRaw(t, append([]byte(`environment="FOO=bar" `), ssh.MarshalAuthorizedKey(signer.PublicKey())...))
+		srv := startServer(t, u, "PermitUserEnvironment yes\n")
+		client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+		defer client.Close()
+		sshdtest.MustRun(t, client, `echo "$FOO"`, "bar")
+	})
+
+	t.Run("restrict", func(t *testing.T) {
+		u := sshdtest.NewUser(t)
+		signer, _ := sshdtest.NewKey(t)
+		u.WriteAuthorizedKeysRaw(t, append([]byte(`restrict `), ssh.MarshalAuthorizedKey(signer.PublicKey())...))
+		srv := startServer(t, u, "")
+		client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+		defer client.Close()
+		s, err := client.NewSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		if err := s.RequestPty("xterm", 24, 80, ssh.TerminalModes{}); err == nil {
+			t.Fatal("pty request succeeded despite restrict")
+		}
+	})
+
+	t.Run("no-user-rc", func(t *testing.T) {
+		u := sshdtest.NewUser(t)
+		signer, _ := sshdtest.NewKey(t)
+		u.WriteAuthorizedKeysRaw(t, append([]byte(`no-user-rc `), ssh.MarshalAuthorizedKey(signer.PublicKey())...))
+		rcPath := filepath.Join(u.Home, ".ssh", "rc")
+		if err := os.WriteFile(rcPath, []byte("#!/bin/sh\necho rc-ran > \"$HOME/rc-marker\"\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chown(rcPath, u.UID, u.GID); err != nil {
+			t.Fatal(err)
+		}
+		srv := startServer(t, u, "")
+		client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+		defer client.Close()
+		sshdtest.MustRunAs(t, client, "id -un", u.Name)
+		if _, err := os.Stat(filepath.Join(u.Home, "rc-marker")); err == nil {
+			t.Fatal("rc ran despite no-user-rc")
+		}
+	})
 }
 
 func TestPasswordAuthenticationDisabled(t *testing.T) {
@@ -208,14 +307,12 @@ func TestKeyboardInteractiveGating(t *testing.T) {
 
 	u := sshdtest.NewUser(t)
 	srv := startServer(t, u, "")
-	client, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.KeyboardInteractive(answer)))
-	if err != nil {
-		t.Fatalf("keyboard-interactive with default config: %v", err)
-	}
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.KeyboardInteractive(answer)))
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
 	client.Close()
 
 	srv = startServer(t, u, "KbdInteractiveAuthentication no\nPasswordAuthentication no\n")
-	client, err = sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.KeyboardInteractive(answer)))
+	client, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.KeyboardInteractive(answer)))
 	if err == nil {
 		client.Close()
 		t.Fatal("keyboard-interactive succeeded while disabled")

@@ -54,6 +54,10 @@ func TestUnsupportedDirectivesRejected(t *testing.T) {
 	for name, body := range map[string]string{
 		"unknown":       "DefinitelyNotAKeyword yes\n",
 		"weak-cipher":   "Ciphers aes128-cbc\n",
+		"weak-kex":      "KexAlgorithms diffie-hellman-group14-sha1\n",
+		"weak-mac":      "MACs hmac-sha1\n",
+		"weak-hostkey":  "HostKeyAlgorithms ssh-rsa\n",
+		"weak-pubkey":   "PubkeyAcceptedAlgorithms ssh-rsa\n",
 		"authmethods":   "AuthenticationMethods publickey,bogus\n",
 		"usedns":        "UseDNS yes\n",
 		"compression":   "Compression delayed\n",

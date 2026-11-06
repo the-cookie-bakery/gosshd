@@ -56,7 +56,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 
 | ID | Task | Implementation status | Unit test / verification | Smoke test / E2E test |
 | --- | --- | --- | --- | --- |
-| CRY-01 | Explicit modern KEX, cipher, MAC, host-key, and public-key allowlists | Done | `TestApplyDefaults`, `TestRejectWeakAlgorithms` | Smoke clients negotiate modern algorithms; negative weak-algorithm E2E pending |
+| CRY-01 | Explicit modern KEX, cipher, MAC, host-key, and public-key allowlists | Done | `TestApplyDefaults`, `TestRejectWeakAlgorithms` | `config` suite rejects weak KEX, cipher, MAC, host-key, and public-key algorithms; smoke clients negotiate modern algorithms |
 | CRY-02 | Host-key and host-certificate loading with key-type restriction | Done | `TestLoadHostSigners` | Ed25519 host key used in smoke suite |
 | CRY-03 | Prevent RSA host keys from advertising legacy `ssh-rsa` in worker `KEXINIT` | Done | Monitor sends per-key algorithm restrictions; worker remote signer implements `MultiAlgorithmSigner` | `auth` suite verifies `rsa-sha2-*` negotiation and rejects `ssh-rsa`-only clients |
 | CRY-04 | Ed448 support from RFC 8709 | Pending | x/crypto does not implement Ed448 | Not covered |
@@ -70,19 +70,19 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | --- | --- | --- | --- | --- |
 | AUTH-01 | NSS-aware account lookup through `getent passwd` with a short cache and file fallback | Done | Parser and cache tests; container verification | Password/key sessions as real container users |
 | AUTH-02 | NSS-aware shadow lookup through `getent shadow` with a short cache and file fallback | Done | Parser and cache tests; container verification | Password login in smoke suite |
-| AUTH-03 | Password hash verification: yescrypt, SHA-512 crypt, SHA-256 crypt, bcrypt | Done | `go-crypt` decoder path; no dedicated vector table yet | Password login in smoke suite; hash variants need E2E cases |
+| AUTH-03 | Password hash verification: yescrypt, SHA-512 crypt, SHA-256 crypt, bcrypt | Done | `go-crypt` decoder path; no dedicated unit vector table | `auth` suite `TestPasswordHashVariants` covers `$5$`, `$6$`, `$2b$`, and `$y$` logins |
 | AUTH-04 | Reject locked, expired, inactive, missing, and weak-hash accounts | Done | Account checks implemented; auth suite covers locked, expired, unknown, and wrong-password cases | `auth` suite covers locked, expired, and unknown accounts |
 | AUTH-05 | `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups`, `PermitRootLogin`, `/etc/nologin` | Done | `TestMatchUserHost` covers pattern matching | `auth` suite covers Allow/Deny users and groups, PermitRootLogin, and `/etc/nologin` |
-| AUTH-06 | `authorized_keys` parsing and key options (`from`, `command`, `environment`, `no-pty`, `restrict`, `expiry-time`, `no-touch-required`) | Done | `TestParseKeyOptions`, `TestParseKeyOptionsRejectsUnknown`, `TestSourceAllowed`, `TestExpandTokens` | Public-key login in smoke suite; option enforcement E2E pending |
+| AUTH-06 | `authorized_keys` parsing and key options (`from`, `command`, `environment`, `no-pty`, `restrict`, `expiry-time`, `no-touch-required`) | Done | `TestParseKeyOptions`, `TestParseKeyOptionsRejectsUnknown`, `TestSourceAllowed`, `TestExpandTokens` | `auth` suite covers `from`, forced command, `no-pty`, `environment`, `restrict`, `no-user-rc`, and `expiry-time` |
 | AUTH-07 | `authorized_keys` certificate-authority entries (`cert-authority`, `principals=`) | Done | CA lines are matched against the certificate signing key with principal restrictions; `TestAuthorizedKeysCertAuthority` | `cert` suite covers success and wrong-principal rejection |
 | AUTH-08 | `TrustedUserCAKeys`, `AuthorizedPrincipalsFile`, `RevokedKeys`, host certificates | Done | Certificate paths exercised by the `cert` suite | `cert` suite covers trusted CA, principals file, revocation, and host certificates |
 | AUTH-09 | Certificate critical options and extensions parity | Done | Supports `force-command`, `source-address`, `permit-pty`, `permit-user-rc`, and records forwarding extension permissions | `cert` suite verifies permit-pty acceptance and default denial |
 | AUTH-10 | Password failure delay, rate limiting, and user-enumeration resistance | Done | Dummy-hash verification, jittered failure delay, and fixed per-IP limiter; `TestAuthLimiterDelay` | Negative auth attempts exercise the paths; timing itself is not asserted |
 | AUTH-11 | Password length limits and timing-safe comparison audit | Done | 1024-byte limit enforced before lookup; `TestPasswordLengthLimit`; crypt library comparison | Not covered |
 | AUTH-12 | PAM backend for account/session policy and MFA | Deferred | Backend interface exists; no PAM implementation | Not covered |
-| AUTH-13 | Keyboard-interactive backed by password crypt path, gated by `KbdInteractiveAuthentication` | Done | Worker callback registered only when enabled; monitor rejects disabled requests; no dedicated test | Not covered; smoke suite uses password method |
+| AUTH-13 | Keyboard-interactive backed by password crypt path, gated by `KbdInteractiveAuthentication` | Done | Worker callback registered only when enabled; monitor rejects disabled requests | `auth` suite verifies successful keyboard-interactive login and disabled gating |
 | AUTH-14 | Authentication negative test matrix: wrong password, locked, expired, denied user, denied group, bad key options | Done | New `auth` suite | Passing on Debian; matrix runs on all images |
-| AUTH-15 | `LoginGraceTime` connection deadline covering handshake and authentication | Done | Parse validation for negative values; no deadline unit test | Not covered |
+| AUTH-15 | `LoginGraceTime` connection deadline covering handshake and authentication | Done | Parse validation for negative values | `daemon` suite `TestLoginGraceTime` verifies the connection is closed |
 
 ### 3.4 Privilege separation and process hardening
 
@@ -135,7 +135,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Done | New `interop` suite | `ssh`, `scp`, and `sftp` pass |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Done | `interop` suite rejects direct-tcpip, remote forward, agent, and X11 requests | Passing |
 | E2E-11 | Configuration truthfulness negative E2E: `UseDNS`, `Compression`, weak CA algorithms, invalid `MaxStartups` | Done | N/A | `config` and `cert` suites cover the matrix |
-| E2E-12 | Failure artifact retention and container leak checks | Partial | Harness defaults/suffix unit tests; retention behavior remains manual | No leak-check test |
+| E2E-12 | Failure artifact retention and container leak checks | Done | `TestResolveArtifactsDir`, `TestCloseRemovesContainer` | `Close` verifies removal and `GOSSHD_E2E_KEEP=1` retains artifacts under `e2e-tests/.artifacts` |
 
 ### 3.7 CLI, operations, and documentation
 
@@ -143,9 +143,9 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | --- | --- | --- | --- | --- |
 | OPS-01 | CLI flags: `-f`, `-t`, `-T`, `-D`, `-p`, `-h`, `-o`, `-e`, `-4`, `-6`, `-g`, `-V` | Done | Manual verification | Daemon started with `-D -f` in smoke suite |
 | OPS-02 | Inetd mode (`-i`) | Done | `serveInetd` uses stdin as the connection; `daemon` suite exercises it | Passing |
-| OPS-03 | systemd socket activation | Partial | `LISTEN_PID`/`LISTEN_FDS` listener adoption implemented; only the inactive path is unit-tested | Not covered |
+| OPS-03 | systemd socket activation | Done | `LISTEN_PID`/`LISTEN_FDS` adoption; `TestSystemdListenersInactive`, `TestSystemdListenersInvalidEnvironment` | `daemon` suite `TestSystemdSocketActivation` serves a session from an inherited listener |
 | OPS-04 | SIGHUP configuration reload | Done | Policy reload with listener/host-key change rejection; `reloadCompatible` unit tests | `daemon` suite reloads ForceCommand and rejects listener changes |
-| OPS-05 | Syslog/journald integration and log levels | Partial | Leveled logger with syslog fallback; `TestLevelFiltering` | Syslog path not covered in E2E |
+| OPS-05 | Syslog/journald integration and log levels | Done | Leveled logger with syslog fallback; `TestLevelFiltering` | `daemon` suite `TestSyslogLogging` verifies `/dev/log` delivery |
 | OPS-06 | PID file lifecycle | Done | Manual code inspection | Not covered |
 | OPS-07 | Man page and example configuration | Done | `docs/gosshd.8`, `docs/sshd_config.example`, README links | N/A |
 | OPS-08 | Threat model and security review document | Done | `docs/threat-model.md` covers assets, trust boundaries, attacker models, controls, residual risks, and non-goals | N/A |
@@ -172,13 +172,6 @@ The following areas are implemented and have at least smoke or unit verification
 | Crypto policy | Explicit modern allowlists and weak-algorithm rejection |
 
 ## 5. Remaining work
-
-### Milestone E: verification sweep
-
-1. Add the remaining authentication E2E cases: hash variants, `authorized_keys` option enforcement, keyboard-interactive, and `LoginGraceTime`.
-2. Add negative weak-algorithm E2E coverage for `CRY-01`.
-3. Cover systemd socket activation and syslog output in E2E.
-4. Add a container leak check and assert failure artifact retention.
 
 ### Milestone F: operations and compatibility
 

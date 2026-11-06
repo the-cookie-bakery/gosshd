@@ -188,6 +188,108 @@ func TestInetdMode(t *testing.T) {
 	}
 }
 
+func TestSystemdSocketActivation(t *testing.T) {
+	requireRoot(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", baseConfig(hostPath, 0))
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	listenFile, err := listener.(*net.TCPListener).File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listenFile.Close()
+
+	logPath := filepath.Join(dir, "systemd.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logFile.Close()
+
+	cmd := exec.Command("/bin/sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0" -D -e -f "$1"`, binPath(t), cfgPath)
+	cmd.ExtraFiles = []*os.File{listenFile}
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	sshdtest.WaitPort(t, port, 10*time.Second)
+	client := sshdtest.Dial(t, port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	defer client.Close()
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+}
+
+func TestSyslogLogging(t *testing.T) {
+	requireRoot(t)
+	if _, err := os.Stat("/dev/log"); err == nil {
+		t.Skip("/dev/log already exists")
+	}
+	socket, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: "/dev/log", Net: "unixgram"})
+	if err != nil {
+		t.Skipf("cannot bind /dev/log: %v", err)
+	}
+	t.Cleanup(func() {
+		socket.Close()
+		os.Remove("/dev/log")
+	})
+
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	port := sshdtest.FreePort(t)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", baseConfig(hostPath, port)+"SyslogFacility LOCAL0\n")
+	logPath := filepath.Join(dir, "syslog.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logFile.Close()
+
+	cmd := exec.Command(binPath(t), "-D", "-f", cfgPath)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	sshdtest.WaitPort(t, port, 10*time.Second)
+
+	if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4096)
+	n, _, err := socket.ReadFromUnix(buf)
+	if err != nil {
+		raw, _ := os.ReadFile(logPath)
+		t.Fatalf("read syslog: %v: %s", err, raw)
+	}
+	message := string(buf[:n])
+	if !strings.Contains(message, "listening on") || !strings.Contains(message, "gosshd") {
+		t.Fatalf("unexpected syslog message %q", message)
+	}
+}
+
 func TestLoginGraceTime(t *testing.T) {
 	requireRoot(t)
 	dir := t.TempDir()

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -16,6 +18,25 @@ func TestSystemdListenersInactive(t *testing.T) {
 	}
 	if activated || len(listeners) != 0 {
 		t.Fatalf("activated=%v listeners=%d", activated, len(listeners))
+	}
+}
+
+func TestSystemdListenersInvalidEnvironment(t *testing.T) {
+	t.Setenv("LISTEN_PID", "1")
+	t.Setenv("LISTEN_FDS", "1")
+	if listeners, activated, err := systemdListeners(); err != nil || activated || len(listeners) != 0 {
+		t.Fatalf("mismatched pid: activated=%v listeners=%d err=%v", activated, len(listeners), err)
+	}
+
+	t.Setenv("LISTEN_PID", strconv.Itoa(os.Getpid()))
+	t.Setenv("LISTEN_FDS", "0")
+	if listeners, activated, err := systemdListeners(); err != nil || activated || len(listeners) != 0 {
+		t.Fatalf("zero fds: activated=%v listeners=%d err=%v", activated, len(listeners), err)
+	}
+
+	t.Setenv("LISTEN_FDS", "1")
+	if listeners, activated, err := systemdListeners(); err == nil || !activated || len(listeners) != 0 {
+		t.Fatalf("invalid fd: activated=%v listeners=%d err=%v", activated, len(listeners), err)
 	}
 }
 

@@ -192,6 +192,9 @@ func (h *Harness) Close() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_ = exec.CommandContext(ctx, h.opts.Runtime, "rm", "-f", h.name).Run()
+	if err := exec.CommandContext(ctx, h.opts.Runtime, "container", "exists", h.name).Run(); err == nil {
+		h.t.Errorf("container %s leaked after cleanup", h.name)
+	}
 }
 
 func (h *Harness) run(ctx context.Context, args ...string) (Result, error) {
@@ -228,6 +231,16 @@ type Artifacts struct {
 	Dir    string
 	Gosshd string
 	Suites map[string]string
+}
+
+func ResolveArtifactsDir(repoRoot string, keep bool, now time.Time) string {
+	if dir := strings.TrimSpace(os.Getenv("GOSSHD_E2E_ARTIFACTS")); dir != "" {
+		return dir
+	}
+	if !keep {
+		return ""
+	}
+	return filepath.Join(repoRoot, "e2e-tests", ".artifacts", now.UTC().Format("20060102-150405"))
 }
 
 func BuildArtifacts(t testing.TB, opts Options, suites []string) Artifacts {

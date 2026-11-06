@@ -262,13 +262,13 @@ The host-side driver:
 Suites verify:
 
 - `smoke`: password/public-key auth, exec, PTY, concurrent sessions, signals, internal SFTP
-- `auth`: wrong password, locked/expired/unknown accounts, allow/deny users, authorized_keys options, disabled auth methods, keyboard-interactive gating
+- `auth`: wrong password, hash variants, locked/expired/unknown accounts, allow/deny users, authorized_keys options, disabled auth methods, keyboard-interactive success and gating
 - `privsep`: worker and session uid separation
 - `config`: Include/recursion, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, `-T` defaults
 - `cert`: trusted user CA, principals file, revocation, `cert-authority` in `authorized_keys`, certificate force-command, host certificates
 - `interop`: real `ssh`/`scp`/`sftp`, exit status, PTY, client-alive longevity, `no-more-sessions`, and forwarding rejection
 - `sftp`: external subsystem, chroot, and read-only internal SFTP
-- `daemon`: SIGHUP reload, reload rejection, and inetd mode
+- `daemon`: SIGHUP reload, reload rejection, inetd mode, systemd socket activation, syslog delivery, and login grace time
 - Debian, Ubuntu, and Fedora containers
 
 ## 10. Phase plan and status

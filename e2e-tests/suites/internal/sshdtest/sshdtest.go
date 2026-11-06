@@ -185,6 +185,15 @@ func SetPassword(t testing.TB, name, password string) {
 	}
 }
 
+func SetPasswordHash(t testing.TB, name, hash string) {
+	t.Helper()
+	cmd := exec.Command("chpasswd", "-e")
+	cmd.Stdin = strings.NewReader(name + ":" + hash + "\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("chpasswd -e: %v: %s", err, out)
+	}
+}
+
 func LockUser(t testing.TB, name string) {
 	t.Helper()
 	if out, err := exec.Command("usermod", "-L", name).CombinedOutput(); err != nil {

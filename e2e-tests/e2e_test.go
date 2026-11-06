@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,9 @@ func TestE2E(t *testing.T) {
 		suites = "smoke,auth,privsep,config,cert,interop,sftp,daemon"
 	}
 	suiteNames := splitList(suites)
-	artifacts := harness.BuildArtifacts(t, harness.Options{RepoRoot: root}, suiteNames)
+	keep := os.Getenv("GOSSHD_E2E_KEEP") == "1"
+	artifacts := harness.BuildArtifacts(t, harness.Options{RepoRoot: root, ArtifactsDir: harness.ResolveArtifactsDir(root, keep, time.Now())}, suiteNames)
+	t.Logf("artifacts: %s", artifacts.Dir)
 	for _, imageName := range strings.Split(images, ",") {
 		imageName = strings.TrimSpace(imageName)
 		if imageName == "" {
@@ -43,7 +46,7 @@ func TestE2E(t *testing.T) {
 					RepoRoot:      root,
 					ArtifactsDir:  artifacts.Dir,
 					TestdataDir:   root + "/e2e-tests/testdata",
-					KeepOnFailure: os.Getenv("GOSSHD_E2E_KEEP") == "1",
+					KeepOnFailure: keep,
 					Env: map[string]string{
 						"GOSSHD_BIN":      "/e2e/gosshd",
 						"GOSSHD_TESTDATA": "/e2e-testdata",
@@ -54,7 +57,14 @@ func TestE2E(t *testing.T) {
 				}
 				res, err := h.RunTestBinary(ctx, suite+".test", "-test.v", "-test.timeout=10m")
 				if err != nil {
-					t.Log(h.Diagnostics(ctx))
+					diagnostics := h.Diagnostics(ctx)
+					path := filepath.Join(artifacts.Dir, imageName+"-"+suite+"-diagnostics.txt")
+					if writeErr := os.WriteFile(path, []byte(diagnostics+"\n"+res.Output), 0o644); writeErr != nil {
+						t.Logf("write diagnostics: %v", writeErr)
+					} else {
+						t.Logf("diagnostics: %s", path)
+					}
+					t.Log(diagnostics)
 					t.Fatalf("suite %s failed: %v\n%s", suite, err, res.Output)
 				}
 				t.Log(res.Output)
