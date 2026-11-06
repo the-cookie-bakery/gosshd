@@ -195,6 +195,9 @@ func certificatePermissions(cert *ssh.Certificate, remote net.Addr) (*Permission
 	if _, ok := cert.Extensions["permit-user-rc"]; !ok {
 		p.NoUserRC = true
 	}
+	_, p.PermitAgentForwarding = cert.Extensions["permit-agent-forwarding"]
+	_, p.PermitPortForwarding = cert.Extensions["permit-port-forwarding"]
+	_, p.PermitX11Forwarding = cert.Extensions["permit-X11-forwarding"]
 	return p, nil
 }
 

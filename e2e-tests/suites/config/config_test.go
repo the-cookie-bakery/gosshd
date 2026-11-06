@@ -132,3 +132,22 @@ func TestMatchConfigAccepted(t *testing.T) {
 		t.Fatalf("unsupported Match directive accepted: %s", out)
 	}
 }
+
+func TestHostKeyPermissions(t *testing.T) {
+	bin := requireBin(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", fmt.Sprintf("HostKey %s\n", hostPath))
+	if err := os.Chmod(hostPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := testConfig(t, bin, cfgPath); code == 0 {
+		t.Fatalf("world-readable host key accepted: %s", out)
+	}
+	if err := os.Chmod(hostPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := testConfig(t, bin, cfgPath); code != 0 {
+		t.Fatalf("0600 host key rejected (%d): %s", code, out)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,5 +257,55 @@ func TestAuthorizedPrincipalsCommand(t *testing.T) {
 	if err == nil {
 		c.Close()
 		t.Fatal("principal not returned by command was accepted")
+	}
+}
+
+func TestCertificatePermitPTY(t *testing.T) {
+	requireRoot(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	u := sshdtest.NewUser(t)
+	caSigner, _ := sshdtest.NewKey(t)
+	userSigner, _ := sshdtest.NewKey(t)
+	caPath := writePublic(t, dir, "user_ca.pub", caSigner.PublicKey())
+	srv := startServer(t, dir, hostPath, fmt.Sprintf("TrustedUserCAKeys %s\n", caPath))
+
+	good := signCert(t, caSigner, userSigner.PublicKey(), ssh.UserCert, []string{u.Name}, nil, map[string]string{"permit-pty": ""})
+	goodSigner, err := ssh.NewCertSigner(good, userSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(goodSigner)))
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.RequestPty("xterm", 24, 80, ssh.TerminalModes{}); err != nil {
+		t.Fatalf("permit-pty certificate was denied: %v", err)
+	}
+	out, err := session.CombinedOutput("id -un")
+	if err != nil {
+		t.Fatalf("pty run: %v: %s", err, out)
+	}
+	if strings.TrimSpace(string(out)) != u.Name {
+		t.Fatalf("got %q", out)
+	}
+	session.Close()
+	client.Close()
+
+	bad := signCert(t, caSigner, userSigner.PublicKey(), ssh.UserCert, []string{u.Name}, nil, nil)
+	badSigner, err := ssh.NewCertSigner(bad, userSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client = sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(badSigner)))
+	defer client.Close()
+	session, err = client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if err := session.RequestPty("xterm", 24, 80, ssh.TerminalModes{}); err == nil {
+		t.Fatal("PTY accepted without permit-pty extension")
 	}
 }

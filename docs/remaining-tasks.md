@@ -46,7 +46,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Done | Command execution and principal parsing share the validated command path; unit tests | `cert` suite logs in via command-provided principals |
 | CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Done | Parsed alternatives, startup validation, per-connection auth-progress state machine, and `PartialSuccessError` callbacks; unit tests cover completion/partial/wrong-order cases | `auth` suite covers publickey+password success, single-factor failure, and wrong second factor |
 | CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*` and `TCPKeepAlive` are applied; compression, DNS, and forwarding options remain acknowledged only | `interop` exercises client-alive and TCP keepalive paths |
-| CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` and `-T` manually verified | Smoke suite starts daemon with generated config; no negative config E2E |
+| CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` validates command paths/users and host-key permissions; `-T` dumps JSON rather than OpenSSH text | `config` suite covers negative host-key permission cases |
 | CFG-09 | Match/Include E2E fixtures | Done | `config`, `auth`, and existing Include fixtures | Passing |
 
 ### 3.2 Cryptography and host keys
@@ -55,7 +55,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | --- | --- | --- | --- | --- |
 | CRY-01 | Explicit modern KEX, cipher, MAC, host-key, and public-key allowlists | Done | `TestApplyDefaults`, `TestRejectWeakAlgorithms` | Smoke clients negotiate modern algorithms; negative weak-algorithm E2E pending |
 | CRY-02 | Host-key and host-certificate loading with key-type restriction | Done | `TestLoadHostSigners` | Ed25519 host key used in smoke suite |
-| CRY-03 | Prevent RSA host keys from advertising legacy `ssh-rsa` in worker `KEXINIT` | Partial | Monitor restricts RSA signer algorithms; worker remote signer still advertises the key type list from x/crypto | Not covered; requires an RSA host-key smoke test |
+| CRY-03 | Prevent RSA host keys from advertising legacy `ssh-rsa` in worker `KEXINIT` | Done | Monitor sends per-key algorithm restrictions; worker remote signer implements `MultiAlgorithmSigner` | `auth` suite verifies `rsa-sha2-*` negotiation and rejects `ssh-rsa`-only clients |
 | CRY-04 | Ed448 support from RFC 8709 | Pending | x/crypto does not implement Ed448 | Not covered |
 | CRY-05 | RSA minimum-size enforcement and warnings | Done | `RequiredRSASize` defaults to 2048; enforced for host, user, and certificate keys; `TestLoadHostSignersRSAMinimum`, `TestCheckRSASize` | Not covered |
 | CRY-06 | FIPS 140-3 mode verification | Pending | No test | Not covered |
@@ -68,11 +68,11 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | AUTH-02 | NSS-aware shadow lookup through `getent shadow` with a short cache and file fallback | Done | Parser and cache tests; container verification | Password login in smoke suite |
 | AUTH-03 | Password hash verification: yescrypt, SHA-512 crypt, SHA-256 crypt, bcrypt | Done | `go-crypt` decoder path; no dedicated vector table yet | Password login in smoke suite; hash variants need E2E cases |
 | AUTH-04 | Reject locked, expired, inactive, missing, and weak-hash accounts | Done | Account checks implemented; auth suite covers locked, expired, unknown, and wrong-password cases | `auth` suite covers locked, expired, and unknown accounts |
-| AUTH-05 | `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups`, `PermitRootLogin`, `/etc/nologin` | Partial | `TestMatchUserHost` covers pattern matching; allow/deny user E2E added | `auth` suite covers AllowUsers/DenyUsers; groups, PermitRootLogin, and `/etc/nologin` still uncovered |
+| AUTH-05 | `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups`, `PermitRootLogin`, `/etc/nologin` | Done | `TestMatchUserHost` covers pattern matching | `auth` suite covers Allow/Deny users and groups, PermitRootLogin, and `/etc/nologin` |
 | AUTH-06 | `authorized_keys` parsing and key options (`from`, `command`, `environment`, `no-pty`, `restrict`, `expiry-time`, `no-touch-required`) | Done | `TestParseKeyOptions`, `TestParseKeyOptionsRejectsUnknown`, `TestSourceAllowed`, `TestExpandTokens` | Public-key login in smoke suite; option enforcement E2E pending |
 | AUTH-07 | `authorized_keys` certificate-authority entries (`cert-authority`, `principals=`) | Done | CA lines are matched against the certificate signing key with principal restrictions; `TestAuthorizedKeysCertAuthority` | `cert` suite covers success and wrong-principal rejection |
 | AUTH-08 | `TrustedUserCAKeys`, `AuthorizedPrincipalsFile`, `RevokedKeys`, host certificates | Done | Certificate paths exercised by the `cert` suite | `cert` suite covers trusted CA, principals file, revocation, and host certificates |
-| AUTH-09 | Certificate critical options and extensions parity | Partial | Supports basic `force-command`, `source-address`, `permit-pty`, `permit-user-rc` checks | Not covered |
+| AUTH-09 | Certificate critical options and extensions parity | Done | Supports `force-command`, `source-address`, `permit-pty`, `permit-user-rc`, and records forwarding extension permissions | `cert` suite verifies permit-pty acceptance and default denial |
 | AUTH-10 | Password failure delay, rate limiting, and user-enumeration resistance | Done | Dummy-hash verification, jittered failure delay, and fixed per-IP limiter; `TestAuthLimiterDelay` | Negative auth attempts exercise the paths; timing itself is not asserted |
 | AUTH-11 | Password length limits and timing-safe comparison audit | Done | 1024-byte limit enforced before lookup; `TestPasswordLengthLimit`; crypt library comparison | Not covered |
 | AUTH-12 | PAM backend for account/session policy and MFA | Deferred | Backend interface exists; no PAM implementation | Not covered |

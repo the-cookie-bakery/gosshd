@@ -30,20 +30,23 @@ var (
 )
 
 type Permissions struct {
-	Username      string
-	UID           uint32
-	GID           uint32
-	Groups        []string
-	Home          string
-	Shell         string
-	ForceCommand  string
-	SourceAddress string
-	Environment   []string
-	NoPTY         bool
-	NoUserRC      bool
-	CertAuthority bool
-	Principals    []string
-	KeyOptions    map[string]string
+	Username              string
+	UID                   uint32
+	GID                   uint32
+	Groups                []string
+	Home                  string
+	Shell                 string
+	ForceCommand          string
+	SourceAddress         string
+	Environment           []string
+	NoPTY                 bool
+	NoUserRC              bool
+	PermitAgentForwarding bool
+	PermitPortForwarding  bool
+	PermitX11Forwarding   bool
+	CertAuthority         bool
+	Principals            []string
+	KeyOptions            map[string]string
 }
 
 type Authenticator struct {

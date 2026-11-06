@@ -86,7 +86,15 @@ func (r *rpcClient) call(p *Packet) (*Result, []int, error) {
 type remoteSigner struct {
 	index int
 	pub   ssh.PublicKey
+	algos []string
 	rpc   *rpcClient
+}
+
+func (s *remoteSigner) Algorithms() []string {
+	if len(s.algos) == 0 {
+		return []string{s.pub.Type()}
+	}
+	return append([]string(nil), s.algos...)
 }
 
 func (s *remoteSigner) PublicKey() ssh.PublicKey {
@@ -149,7 +157,7 @@ func RunWorker() error {
 		if err != nil {
 			return err
 		}
-		signers = append(signers, &remoteSigner{index: i, pub: pub, rpc: rpc})
+		signers = append(signers, &remoteSigner{index: i, pub: pub, algos: hk.Algorithms, rpc: rpc})
 	}
 	serverCfg := &ssh.ServerConfig{
 		Config: ssh.Config{

@@ -28,7 +28,8 @@ import (
 )
 
 type HostKeyPublic struct {
-	Blob []byte
+	Blob       []byte
+	Algorithms []string
 }
 
 type WorkerInit struct {
@@ -275,7 +276,11 @@ func (m *Monitor) handleConn(conn net.Conn) {
 
 	initData := WorkerInit{Config: m.cfg.Clone()}
 	for _, s := range m.signers {
-		initData.HostKeys = append(initData.HostKeys, HostKeyPublic{Blob: s.PublicKey().Marshal()})
+		algorithms := []string{s.PublicKey().Type()}
+		if multi, ok := s.(ssh.MultiAlgorithmSigner); ok {
+			algorithms = multi.Algorithms()
+		}
+		initData.HostKeys = append(initData.HostKeys, HostKeyPublic{Blob: s.PublicKey().Marshal(), Algorithms: algorithms})
 	}
 	raw, err := json.Marshal(initData)
 	if err != nil {

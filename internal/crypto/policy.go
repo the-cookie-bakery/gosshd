@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 
 	"golang.org/x/crypto/ssh"
 
@@ -163,6 +164,18 @@ func LoadHostSigners(paths []string, certPaths []string, allowed []string, requi
 	signers := make([]ssh.Signer, 0, len(paths))
 	byKey := map[string]ssh.Signer{}
 	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("stat host key %s: %w", path, err)
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			return nil, fmt.Errorf("host key %s is group or world accessible", path)
+		}
+		if os.Geteuid() == 0 {
+			if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Uid != 0 {
+				return nil, fmt.Errorf("host key %s is not owned by root", path)
+			}
+		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read host key %s: %w", path, err)

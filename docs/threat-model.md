@@ -83,6 +83,7 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 | NSS-aware lookups via `getent` with short caches and file fallback | `internal/nss` |
 | Password length cap, dummy-hash verification, failure delay, per-IP limiter | `internal/auth`, `internal/privsep/limiter.go` |
 | Explicit modern algorithm allowlists and weak-algorithm rejection | `internal/crypto/policy.go` |
+| RSA host keys never advertise legacy `ssh-rsa` to workers | `internal/privsep`, `internal/crypto` |
 | `RequiredRSASize` enforced for host, user, and certificate RSA keys | `internal/crypto`, `internal/auth` |
 | `authorized_keys` options, certificates, revocation, and `cert-authority` entries | `internal/auth` |
 | Monitor-owned connection identity for source/access checks | `internal/privsep/monitor.go` |

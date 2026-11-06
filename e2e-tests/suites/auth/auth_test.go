@@ -4,9 +4,13 @@ package auth
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/binary"
+	"encoding/pem"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,7 +37,6 @@ func startServer(t *testing.T, u *sshdtest.User, extra string) *sshdtest.Server 
 ListenAddress 127.0.0.1
 HostKey %s
 PubkeyAuthentication yes
-PermitRootLogin no
 UsePAM no
 StrictModes yes
 LogLevel DEBUG
@@ -494,5 +497,118 @@ func TestMaxSessions(t *testing.T) {
 	defer second.Close()
 	if err := second.Start("id"); err == nil {
 		t.Fatal("second session started despite MaxSessions 1")
+	}
+}
+
+func TestAllowDenyGroups(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	group := fmt.Sprintf("gsgrp%06d", time.Now().UnixNano()%1000000)
+	if out, err := exec.Command("groupadd", group).CombinedOutput(); err != nil {
+		t.Fatalf("groupadd: %v: %s", err, out)
+	}
+	defer exec.Command("groupdel", group).Run()
+	if out, err := exec.Command("usermod", "-aG", group, u.Name).CombinedOutput(); err != nil {
+		t.Fatalf("usermod: %v: %s", err, out)
+	}
+
+	srv := startServer(t, u, "AllowGroups "+group+"\n")
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+	client.Close()
+
+	srv = startServer(t, u, "DenyGroups "+group+"\n")
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	if err == nil {
+		c.Close()
+		t.Fatal("user in DenyGroups was accepted")
+	}
+}
+
+func TestPermitRootLogin(t *testing.T) {
+	signer, _ := sshdtest.NewKey(t)
+	if err := os.MkdirAll("/root/.ssh", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("/root/.ssh/authorized_keys", ssh.MarshalAuthorizedKey(signer.PublicKey()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := startServer(t, nil, "PermitRootLogin no\n")
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig("root", ssh.PublicKeys(signer)))
+	if err == nil {
+		c.Close()
+		t.Fatal("root login accepted despite PermitRootLogin no")
+	}
+
+	srv = startServer(t, nil, "PermitRootLogin yes\n")
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig("root", ssh.PublicKeys(signer)))
+	defer client.Close()
+	sshdtest.MustRunAs(t, client, "id -un", "root")
+}
+
+func TestNologin(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	if err := os.WriteFile("/etc/nologin", []byte("maintenance\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove("/etc/nologin")
+	srv := startServer(t, u, "")
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	if err == nil {
+		c.Close()
+		t.Fatal("login accepted while /etc/nologin exists")
+	}
+}
+
+func TestRSAPublicKeyAdvertisement(t *testing.T) {
+	dir := t.TempDir()
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKey(rsaKey, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostPath := filepath.Join(dir, "ssh_host_rsa_key")
+	if err := os.WriteFile(hostPath, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	port := sshdtest.FreePort(t)
+	cfg := fmt.Sprintf(`Port %d
+ListenAddress 127.0.0.1
+HostKey %s
+PasswordAuthentication no
+PubkeyAuthentication yes
+UsePAM no
+AuthorizedKeysFile .ssh/authorized_keys
+StrictModes yes
+`, port, hostPath)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", cfg)
+	sshdtest.Start(t, os.Getenv("GOSSHD_BIN"), cfgPath, port)
+
+	client := sshdtest.Dial(t, port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	meta, ok := client.Conn.(ssh.AlgorithmsConnMetadata)
+	if !ok {
+		t.Fatal("client does not expose negotiated algorithms")
+	}
+	algo := meta.Algorithms().HostKey
+	client.Close()
+	if algo == ssh.KeyAlgoRSA || !strings.HasPrefix(algo, "rsa-sha2-") {
+		t.Fatalf("negotiated host key algorithm %q", algo)
+	}
+
+	legacy := sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer))
+	legacy.HostKeyAlgorithms = []string{ssh.KeyAlgoRSA}
+	c, err := sshdtest.TryDial(port, legacy)
+	if err == nil {
+		c.Close()
+		t.Fatal("client restricted to ssh-rsa connected to an RSA host key")
 	}
 }

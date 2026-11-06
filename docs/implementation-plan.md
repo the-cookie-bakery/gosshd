@@ -184,6 +184,7 @@ The parser currently supports:
 - common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`, `AuthenticationMethods`, `Match`, and authorized-command execution
 - explicit rejection of unknown keywords
 - explicit rejection of directives that try to re-enable weak cryptography
+- host-key permission validation (`-t`/startup); `-T` currently emits JSON rather than OpenSSH text
 
 Not yet implemented:
 
