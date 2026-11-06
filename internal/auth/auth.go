@@ -47,8 +47,10 @@ type Permissions struct {
 }
 
 type Authenticator struct {
-	cfg     *config.Config
-	decoder *crypt.Decoder
+	cfg               *config.Config
+	decoder           *crypt.Decoder
+	keysCommand       *commandSpec
+	principalsCommand *commandSpec
 }
 
 func New(cfg *config.Config) (*Authenticator, error) {
@@ -56,7 +58,20 @@ func New(cfg *config.Config) (*Authenticator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Authenticator{cfg: cfg, decoder: d}, nil
+	keysCommand, err := newCommandSpec(cfg.AuthorizedKeysCommand, cfg.AuthorizedKeysCommandUser)
+	if err != nil {
+		return nil, err
+	}
+	principalsCommand, err := newCommandSpec(cfg.AuthorizedPrincipalsCommand, cfg.AuthorizedPrincipalsCommandUser)
+	if err != nil {
+		return nil, err
+	}
+	return &Authenticator{
+		cfg:               cfg,
+		decoder:           d,
+		keysCommand:       keysCommand,
+		principalsCommand: principalsCommand,
+	}, nil
 }
 
 func (a *Authenticator) Config() *config.Config {
@@ -77,7 +92,7 @@ func (a *Authenticator) Lookup(username string, remote net.Addr) (*nss.User, err
 	return u, nil
 }
 
-func (a *Authenticator) Password(username string, password []byte, remote net.Addr) (*Permissions, error) {
+func (a *Authenticator) Password(username string, password []byte, remote, local net.Addr) (*Permissions, error) {
 	if len(password) > maxPasswordLength {
 		return nil, ErrInvalidLogin
 	}
@@ -135,7 +150,7 @@ func (a *Authenticator) Password(username string, password []byte, remote net.Ad
 	}, nil
 }
 
-func (a *Authenticator) PublicKey(username string, key ssh.PublicKey, remote net.Addr) (*Permissions, error) {
+func (a *Authenticator) PublicKey(username string, key ssh.PublicKey, remote, local net.Addr) (*Permissions, error) {
 	u, err := a.Lookup(username, remote)
 	if err != nil {
 		return nil, err
@@ -146,7 +161,7 @@ func (a *Authenticator) PublicKey(username string, key ssh.PublicKey, remote net
 	if err := checkRSASize(key, a.cfg.RequiredRSASize); err != nil {
 		return nil, err
 	}
-	p, err := a.lookupAuthorizedKey(u, key, remote)
+	p, err := a.lookupAuthorizedKey(u, key, remote, local)
 	if err != nil {
 		return nil, err
 	}

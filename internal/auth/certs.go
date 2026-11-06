@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
 
-func (a *Authenticator) lookupAuthorizedCertAuthorities(u *nss.User, cert *ssh.Certificate, remote net.Addr) (*Permissions, bool, error) {
+func (a *Authenticator) lookupAuthorizedCertAuthorities(u *nss.User, cert *ssh.Certificate, remote, local net.Addr) (*Permissions, bool, error) {
 	if cert.CertType != ssh.UserCert {
 		return nil, false, nil
 	}
@@ -32,7 +33,12 @@ func (a *Authenticator) lookupAuthorizedCertAuthorities(u *nss.User, cert *ssh.C
 		if err := secureAuthorizedKeysFile(u, expanded, a.cfg.StrictModes); err != nil {
 			continue
 		}
-		perms, found, err := scanCertAuthorityFile(expanded, cert, u, remote)
+		f, err := os.Open(expanded)
+		if err != nil {
+			continue
+		}
+		perms, found, err := scanCertAuthority(f, cert, u, remote)
+		f.Close()
 		if err != nil {
 			continue
 		}
@@ -40,19 +46,19 @@ func (a *Authenticator) lookupAuthorizedCertAuthorities(u *nss.User, cert *ssh.C
 			return perms, true, nil
 		}
 	}
+	if a.keysCommand != nil {
+		ctx := certTokenContext(u, cert, remote, local)
+		if data, err := a.keysCommand.run(ctx, true); err == nil {
+			if perms, found, err := scanCertAuthority(bytes.NewReader(data), cert, u, remote); err == nil && found {
+				return perms, true, nil
+			}
+		}
+	}
 	return nil, false, nil
 }
 
-func scanCertAuthorityFile(path string, cert *ssh.Certificate, u *nss.User, remote net.Addr) (*Permissions, bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, false, nil
-		}
-		return nil, false, err
-	}
-	defer f.Close()
-	scan := bufio.NewScanner(f)
+func scanCertAuthority(r io.Reader, cert *ssh.Certificate, u *nss.User, remote net.Addr) (*Permissions, bool, error) {
+	scan := bufio.NewScanner(r)
 	scan.Buffer(make([]byte, 64*1024), 512*1024)
 	for scan.Scan() {
 		line := bytes.TrimSpace(scan.Bytes())
@@ -112,7 +118,7 @@ func scanCertAuthorityFile(path string, cert *ssh.Certificate, u *nss.User, remo
 	return nil, false, nil
 }
 
-func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, remote net.Addr) (*Permissions, error) {
+func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, remote, local net.Addr) (*Permissions, error) {
 	if cert.CertType != ssh.UserCert {
 		return nil, ErrAccessDenied
 	}
@@ -142,22 +148,25 @@ func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, re
 	}
 	principal := u.Name
 	if a.cfg.AuthorizedPrincipalsFile != "" {
-		allowed, err := readPrincipals(a.cfg.AuthorizedPrincipalsFile)
+		allowed, err := readPrincipalsFile(a.cfg.AuthorizedPrincipalsFile)
 		if err != nil {
 			return nil, ErrAccessDenied
 		}
-		principal = ""
-		for _, p := range cert.ValidPrincipals {
-			for _, candidate := range allowed {
-				if p == candidate {
-					principal = p
-					break
-				}
-			}
-			if principal != "" {
-				break
-			}
+		principal = matchPrincipal(cert, allowed)
+		if principal == "" {
+			return nil, ErrAccessDenied
 		}
+	} else if a.principalsCommand != nil {
+		ctx := certTokenContext(u, cert, remote, local)
+		data, err := a.principalsCommand.run(ctx, true)
+		if err != nil {
+			return nil, ErrAccessDenied
+		}
+		allowed, err := readPrincipals(bytes.NewReader(data))
+		if err != nil {
+			return nil, ErrAccessDenied
+		}
+		principal = matchPrincipal(cert, allowed)
 		if principal == "" {
 			return nil, ErrAccessDenied
 		}
@@ -242,14 +251,20 @@ func loadRevoked(path string) ([]ssh.PublicKey, error) {
 	return out, scan.Err()
 }
 
-func readPrincipals(path string) ([]string, error) {
-	raw, err := os.ReadFile(path)
+func readPrincipalsFile(path string) ([]string, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
+	return readPrincipals(f)
+}
+
+func readPrincipals(r io.Reader) ([]string, error) {
 	var out []string
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(line)
+	scan := bufio.NewScanner(r)
+	for scan.Scan() {
+		line := strings.TrimSpace(scan.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -258,8 +273,22 @@ func readPrincipals(path string) ([]string, error) {
 		}
 		out = append(out, line)
 	}
+	if err := scan.Err(); err != nil {
+		return nil, err
+	}
 	if len(out) == 0 {
 		return nil, errors.New("no principals")
 	}
 	return out, nil
+}
+
+func matchPrincipal(cert *ssh.Certificate, allowed []string) string {
+	for _, principal := range cert.ValidPrincipals {
+		for _, candidate := range allowed {
+			if principal == candidate {
+				return principal
+			}
+		}
+	}
+	return ""
 }

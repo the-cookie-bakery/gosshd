@@ -87,6 +87,7 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 | `authorized_keys` options, certificates, revocation, and `cert-authority` entries | `internal/auth` |
 | Monitor-owned connection identity for source/access checks | `internal/privsep/monitor.go` |
 | `AuthenticationMethods` composition with per-connection progress | `internal/privsep`, `internal/auth` |
+| Authorized-command execution: root-owned absolute binary, configured user, bounded output/time, no shell | `internal/auth/command.go` |
 | Forged or unknown session RPC rejection and per-connection state isolation | `internal/privsep` |
 | Forwarding, agent, and X11 channels rejected and not advertised | `internal/privsep/worker.go` |
 | Authentication negative, privsep, certificate, and config E2E suites | `e2e-tests/suites` |
@@ -95,11 +96,11 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 
 - The worker is exposed to untrusted network input through `golang.org/x/crypto/ssh`; a memory-safety or parser vulnerability there is outside gosshd's direct control.
 - Workers and session processes are not yet sandboxed with seccomp or Landlock (`PRIV-06`).
+- `AuthorizedKeysCommand` and `AuthorizedPrincipalsCommand` output is untrusted and parsed strictly, but the configured command binary runs with the configured user's privileges.
 - The monitor retains `CAP_DAC_OVERRIDE` and `CAP_KILL` for shadow/authorized-key access and session signaling. A monitor compromise therefore has more reach than a worker compromise.
 - The root-at-exec session launcher window is small but exists; hardening it further requires additional process-level sandboxing.
 - Forged-RPC coverage currently exercises the socket protocol and rejection paths; a full adversarial worker harness is still pending (`PRIV-08`).
 - `Match` blocks are not implemented yet; configurations using them are rejected rather than silently weakened.
-- `AuthorizedKeysCommand` is parsed and warned about but not executed.
 - Forwarding is intentionally disabled for v1.
 - PAM, FIPS 140-3 mode, and Ed448 are deferred; the first two are explicitly unsupported, and Ed448 is unavailable in the current x/crypto baseline.
 - The `setpriv`-based access-denial checks in E2E are best-effort and skipped if the tool is unavailable.

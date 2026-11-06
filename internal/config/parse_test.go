@@ -162,3 +162,36 @@ func TestAcceptsZeroLoginGraceTime(t *testing.T) {
 		t.Fatalf("LoginGraceTime=%v", cfg.LoginGraceTime)
 	}
 }
+
+func TestAuthorizedCommandParsing(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("AuthorizedKeysCommand /bin/true %u\nAuthorizedKeysCommandUser root\nAuthorizedPrincipalsCommand /bin/true %s\nAuthorizedPrincipalsCommandUser root\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.AuthorizedKeysCommand) != 2 || cfg.AuthorizedKeysCommand[0] != "/bin/true" || cfg.AuthorizedKeysCommand[1] != "%u" {
+		t.Fatalf("AuthorizedKeysCommand=%v", cfg.AuthorizedKeysCommand)
+	}
+	if len(cfg.AuthorizedPrincipalsCommand) != 2 || cfg.AuthorizedPrincipalsCommand[1] != "%s" {
+		t.Fatalf("AuthorizedPrincipalsCommand=%v", cfg.AuthorizedPrincipalsCommand)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAuthorizedCommandRequiresUser(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("AuthorizedKeysCommand /bin/true\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected AuthorizedKeysCommand without user to be rejected")
+	}
+	cfg, err = ParseReader(strings.NewReader("AuthorizedPrincipalsCommand /bin/true\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected AuthorizedPrincipalsCommand without user to be rejected")
+	}
+}

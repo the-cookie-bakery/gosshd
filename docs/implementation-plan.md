@@ -181,15 +181,13 @@ The parser currently supports:
 
 - comments, blank lines, quoted arguments, and first-value-wins semantics
 - `Include` with glob expansion and recursion protection
-- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize` and `AuthenticationMethods`
+- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`, `AuthenticationMethods`, and authorized-command execution
 - explicit rejection of unknown keywords
 - explicit rejection of directives that try to re-enable weak cryptography
 
 Not yet implemented:
 
 - `Match` blocks and Match-scoped directives
-- `AuthorizedKeysCommand` execution (the keyword is parsed and now warns at startup, but the command is not run)
-- `AuthorizedPrincipalsCommand` execution
 - complete OpenSSH directive semantics for every accepted keyword
 - full certificate option/extension parity
 

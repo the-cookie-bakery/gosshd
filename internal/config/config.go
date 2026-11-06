@@ -42,12 +42,14 @@ type Config struct {
 	PrintLastLog                 bool
 	Banner                       string
 
-	AuthorizedKeysFile        []string
-	AuthorizedKeysCommand     string
-	AuthorizedKeysCommandUser string
-	TrustedUserCAKeys         []string
-	AuthorizedPrincipalsFile  string
-	RevokedKeys               string
+	AuthorizedKeysFile              []string
+	AuthorizedKeysCommand           []string
+	AuthorizedKeysCommandUser       string
+	AuthorizedPrincipalsCommand     []string
+	AuthorizedPrincipalsCommandUser string
+	TrustedUserCAKeys               []string
+	AuthorizedPrincipalsFile        string
+	RevokedKeys                     string
 
 	AcceptEnv  []string
 	SetEnv     map[string]string
@@ -112,6 +114,8 @@ func (c *Config) Clone() *Config {
 	d.HostKeys = append([]string(nil), c.HostKeys...)
 	d.HostCertificates = append([]string(nil), c.HostCertificates...)
 	d.AuthorizedKeysFile = append([]string(nil), c.AuthorizedKeysFile...)
+	d.AuthorizedKeysCommand = append([]string(nil), c.AuthorizedKeysCommand...)
+	d.AuthorizedPrincipalsCommand = append([]string(nil), c.AuthorizedPrincipalsCommand...)
 	d.TrustedUserCAKeys = append([]string(nil), c.TrustedUserCAKeys...)
 	d.AcceptEnv = append([]string(nil), c.AcceptEnv...)
 	d.KexAlgorithms = append([]string(nil), c.KexAlgorithms...)
@@ -139,6 +143,12 @@ func (c *Config) Clone() *Config {
 }
 
 func (c *Config) Validate() error {
+	if len(c.AuthorizedKeysCommand) > 0 && c.AuthorizedKeysCommandUser == "" {
+		return fmt.Errorf("AuthorizedKeysCommand requires AuthorizedKeysCommandUser")
+	}
+	if len(c.AuthorizedPrincipalsCommand) > 0 && c.AuthorizedPrincipalsCommandUser == "" {
+		return fmt.Errorf("AuthorizedPrincipalsCommand requires AuthorizedPrincipalsCommandUser")
+	}
 	for _, alternative := range c.AuthenticationMethods {
 		for _, method := range alternative {
 			switch method {

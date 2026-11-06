@@ -31,7 +31,6 @@ HostKey %s
 PubkeyAuthentication yes
 PermitRootLogin no
 UsePAM no
-AuthorizedKeysFile .ssh/authorized_keys
 StrictModes yes
 LogLevel DEBUG
 %s`, port, hostPath, extra)
@@ -232,5 +231,31 @@ func TestAuthenticationMethods(t *testing.T) {
 	if err == nil {
 		c.Close()
 		t.Fatal("wrong second factor was accepted")
+	}
+}
+
+func TestAuthorizedKeysCommand(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	dir := t.TempDir()
+	keyPath := dir + "/authorized_keys"
+	if err := os.WriteFile(keyPath, ssh.MarshalAuthorizedKey(signer.PublicKey()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := dir + "/keys-command.sh"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ncat "+keyPath+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	extra := "AuthorizedKeysFile none\nAuthorizedKeysCommand " + script + "\nAuthorizedKeysCommandUser root\n"
+	srv := startServer(t, u, extra)
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+	client.Close()
+
+	otherSigner, _ := sshdtest.NewKey(t)
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(otherSigner)))
+	if err == nil {
+		c.Close()
+		t.Fatal("key not returned by command was accepted")
 	}
 }

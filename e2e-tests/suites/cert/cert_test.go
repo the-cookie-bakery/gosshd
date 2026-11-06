@@ -222,3 +222,39 @@ func TestHostCertificate(t *testing.T) {
 	defer client.Close()
 	sshdtest.MustRunAs(t, client, "id -un", u.Name)
 }
+
+func TestAuthorizedPrincipalsCommand(t *testing.T) {
+	requireRoot(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	u := sshdtest.NewUser(t)
+	caSigner, _ := sshdtest.NewKey(t)
+	userSigner, _ := sshdtest.NewKey(t)
+	caPath := writePublic(t, dir, "user_ca.pub", caSigner.PublicKey())
+	script := dir + "/principals-command.sh"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho cert-principal\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	extra := fmt.Sprintf("TrustedUserCAKeys %s\nAuthorizedPrincipalsCommand %s\nAuthorizedPrincipalsCommandUser root\n", caPath, script)
+	srv := startServer(t, dir, hostPath, extra)
+
+	cert := signCert(t, caSigner, userSigner.PublicKey(), ssh.UserCert, []string{"cert-principal"}, nil, nil)
+	certSigner, err := ssh.NewCertSigner(cert, userSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(certSigner)))
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+	client.Close()
+
+	bad := signCert(t, caSigner, userSigner.PublicKey(), ssh.UserCert, []string{"other-principal"}, nil, nil)
+	badSigner, err := ssh.NewCertSigner(bad, userSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(badSigner)))
+	if err == nil {
+		c.Close()
+		t.Fatal("principal not returned by command was accepted")
+	}
+}

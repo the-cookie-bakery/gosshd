@@ -100,3 +100,21 @@ func requireBin(t *testing.T) string {
 	}
 	return bin
 }
+
+func TestAuthorizedCommandValidation(t *testing.T) {
+	bin := requireBin(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	valid := sshdtest.WriteFile(t, dir, "valid.conf", fmt.Sprintf("HostKey %s\nAuthorizedKeysCommand /bin/true\nAuthorizedKeysCommandUser root\nAuthorizedPrincipalsCommand /bin/true\nAuthorizedPrincipalsCommandUser root\n", hostPath))
+	if out, code := testConfig(t, bin, valid); code != 0 {
+		t.Fatalf("valid command config rejected (%d): %s", code, out)
+	}
+	missingUser := sshdtest.WriteFile(t, dir, "missing_user.conf", fmt.Sprintf("HostKey %s\nAuthorizedKeysCommand /bin/true\n", hostPath))
+	if out, code := testConfig(t, bin, missingUser); code == 0 {
+		t.Fatalf("command without user accepted: %s", out)
+	}
+	missingPath := sshdtest.WriteFile(t, dir, "missing_path.conf", fmt.Sprintf("HostKey %s\nAuthorizedKeysCommand /definitely/not/here\nAuthorizedKeysCommandUser root\n", hostPath))
+	if out, code := testConfig(t, bin, missingPath); code == 0 {
+		t.Fatalf("missing command path accepted: %s", out)
+	}
+}

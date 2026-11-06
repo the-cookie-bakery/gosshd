@@ -82,6 +82,7 @@ type sessionState struct {
 	mu       sync.Mutex
 
 	remote net.Addr
+	local  net.Addr
 
 	authMu   sync.Mutex
 	authDone []string
@@ -246,6 +247,7 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	defer mon.Close()
 	defer worker.Close()
 	remoteAddr := conn.RemoteAddr()
+	localAddr := conn.LocalAddr()
 	tcpFile, err := connFile(conn)
 	if err != nil {
 		conn.Close()
@@ -291,6 +293,7 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	defer pc.Close()
 	st := newSessionState()
 	st.remote = remoteAddr
+	st.local = localAddr
 	m.serveControl(pc, st)
 	cmd.Wait()
 }
@@ -391,7 +394,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 			time.Sleep(delay)
 		}
 		st.authMu.Lock()
-		perms, err := m.auth.Password(p.User, p.Password, st.remote)
+		perms, err := m.auth.Password(p.User, p.Password, st.remote, st.local)
 		for i := range p.Password {
 			p.Password[i] = 0
 		}
@@ -422,7 +425,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if err != nil {
 			return &Result{Error: "invalid public key"}
 		}
-		perms, err := m.auth.PublicKey(p.User, key, st.remote)
+		perms, err := m.auth.PublicKey(p.User, key, st.remote, st.local)
 		if err != nil {
 			return &Result{Error: err.Error()}
 		}
@@ -436,7 +439,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 			return &Result{Error: "invalid public key"}
 		}
 		st.authMu.Lock()
-		perms, err := m.auth.PublicKey(p.User, key, st.remote)
+		perms, err := m.auth.PublicKey(p.User, key, st.remote, st.local)
 		if err != nil {
 			st.authMu.Unlock()
 			return &Result{Error: err.Error()}

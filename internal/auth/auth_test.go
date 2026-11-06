@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
@@ -73,7 +74,7 @@ func TestPasswordLengthLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Password("someone", make([]byte, maxPasswordLength+1), nil); err != ErrInvalidLogin {
+	if _, err := a.Password("someone", make([]byte, maxPasswordLength+1), nil, nil); err != ErrInvalidLogin {
 		t.Fatalf("got %v, want ErrInvalidLogin", err)
 	}
 }
@@ -152,7 +153,7 @@ func TestAuthorizedKeysCertAuthority(t *testing.T) {
 	}
 	u := &nss.User{Name: "test", Home: dir}
 	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.1")}
-	perms, err := a.lookupAuthorizedKey(u, cert, remote)
+	perms, err := a.lookupAuthorizedKey(u, cert, remote, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestAuthorizedKeysCertAuthority(t *testing.T) {
 
 	cert.ValidPrincipals = []string{"other"}
 	bad := *cert
-	if _, err := a.lookupAuthorizedKey(u, &bad, remote); err == nil {
+	if _, err := a.lookupAuthorizedKey(u, &bad, remote, nil); err == nil {
 		t.Fatal("expected mismatched principal to be rejected")
 	}
 }
@@ -174,5 +175,107 @@ func TestDummyPasswordHashIsValid(t *testing.T) {
 	}
 	if _, err := a.decoder.Decode(dummyPasswordHash); err != nil {
 		t.Fatalf("dummy hash does not decode: %v", err)
+	}
+}
+
+func TestExpandCommandArg(t *testing.T) {
+	ctx := tokenContext{
+		username:      "alice",
+		uid:           "1000",
+		home:          "/home/alice",
+		keyType:       "ssh-ed25519",
+		keyBlob:       "blob",
+		fingerprint:   "SHA256:key",
+		connection:    "192.0.2.1 1234 192.0.2.2 22",
+		keyID:         "id",
+		serial:        "42",
+		caType:        "ssh-ed25519",
+		caBlob:        "cab",
+		caFingerprint: "SHA256:ca",
+	}
+	for in, want := range map[string]string{
+		"%u":   "alice",
+		"%U":   "1000",
+		"%h":   "/home/alice",
+		"%t":   "ssh-ed25519",
+		"%k":   "blob",
+		"%f":   "SHA256:key",
+		"%C":   "192.0.2.1 1234 192.0.2.2 22",
+		"%%":   "%",
+		"x%uy": "xalicey",
+	} {
+		got, err := expandCommandArg(in, ctx, false)
+		if err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		if got != want {
+			t.Fatalf("%q=%q want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{
+		"%F": "SHA256:ca",
+		"%i": "id",
+		"%K": "cab",
+		"%s": "42",
+		"%T": "ssh-ed25519",
+	} {
+		got, err := expandCommandArg(in, ctx, true)
+		if err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		if got != want {
+			t.Fatalf("%q=%q want %q", in, got, want)
+		}
+	}
+	if _, err := expandCommandArg("%i", ctx, false); err == nil {
+		t.Fatal("expected cert token to be rejected for keys command")
+	}
+	if _, err := expandCommandArg("%z", ctx, true); err == nil {
+		t.Fatal("expected unknown token to be rejected")
+	}
+}
+
+func TestCommandSpecValidation(t *testing.T) {
+	if _, err := newCommandSpec([]string{"/bin/true"}, ""); err == nil {
+		t.Fatal("expected missing command user to be rejected")
+	}
+	if _, err := newCommandSpec([]string{"true"}, "root"); err == nil {
+		t.Fatal("expected relative command path to be rejected")
+	}
+	if _, err := newCommandSpec([]string{"/definitely/not/here"}, "root"); err == nil {
+		t.Fatal("expected missing command to be rejected")
+	}
+}
+
+func TestScanAuthorizedKeysReader(t *testing.T) {
+	u := &nss.User{Name: "alice", Home: "/home/alice"}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := append([]byte(`command="echo hello" `), ssh.MarshalAuthorizedKey(signer.PublicKey())...)
+	p, found, err := scanAuthorizedKeys(bytes.NewReader(line), signer.PublicKey(), u, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || p.ForceCommand != "echo hello" {
+		t.Fatalf("found=%v perms=%+v", found, p)
+	}
+}
+
+func TestReadPrincipalsReader(t *testing.T) {
+	principals, err := readPrincipals(bytes.NewReader([]byte("# comment\nalice\nbob extra\n\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(principals) != 2 || principals[0] != "alice" || principals[1] != "bob" {
+		t.Fatalf("principals=%v", principals)
+	}
+	if _, err := readPrincipals(bytes.NewReader(nil)); err == nil {
+		t.Fatal("expected empty principals to fail")
 	}
 }

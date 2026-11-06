@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -18,16 +19,16 @@ import (
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
 
-func (a *Authenticator) lookupAuthorizedKey(u *nss.User, key ssh.PublicKey, remote net.Addr) (*Permissions, error) {
+func (a *Authenticator) lookupAuthorizedKey(u *nss.User, key ssh.PublicKey, remote, local net.Addr) (*Permissions, error) {
 	if cert, ok := key.(*ssh.Certificate); ok {
-		perms, found, err := a.lookupAuthorizedCertAuthorities(u, cert, remote)
+		perms, found, err := a.lookupAuthorizedCertAuthorities(u, cert, remote, local)
 		if err != nil {
 			return nil, err
 		}
 		if found {
 			return perms, nil
 		}
-		return a.lookupCertificate(u, cert, remote)
+		return a.lookupCertificate(u, cert, remote, local)
 	}
 	for _, spec := range a.cfg.AuthorizedKeysFile {
 		if spec == "none" {
@@ -43,7 +44,12 @@ func (a *Authenticator) lookupAuthorizedKey(u *nss.User, key ssh.PublicKey, remo
 		if err := secureAuthorizedKeysFile(u, expanded, a.cfg.StrictModes); err != nil {
 			continue
 		}
-		p, found, err := scanAuthorizedKeysFile(expanded, key, u, remote)
+		f, err := os.Open(expanded)
+		if err != nil {
+			continue
+		}
+		p, found, err := scanAuthorizedKeys(f, key, u, remote)
+		f.Close()
 		if err != nil {
 			continue
 		}
@@ -51,19 +57,19 @@ func (a *Authenticator) lookupAuthorizedKey(u *nss.User, key ssh.PublicKey, remo
 			return p, nil
 		}
 	}
+	if a.keysCommand != nil {
+		ctx := keyTokenContext(u, key, remote, local)
+		if data, err := a.keysCommand.run(ctx, false); err == nil {
+			if p, found, err := scanAuthorizedKeys(bytes.NewReader(data), key, u, remote); err == nil && found {
+				return p, nil
+			}
+		}
+	}
 	return nil, ErrAccessDenied
 }
 
-func scanAuthorizedKeysFile(path string, key ssh.PublicKey, u *nss.User, remote net.Addr) (*Permissions, bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, false, nil
-		}
-		return nil, false, err
-	}
-	defer f.Close()
-	scan := bufio.NewScanner(f)
+func scanAuthorizedKeys(r io.Reader, key ssh.PublicKey, u *nss.User, remote net.Addr) (*Permissions, bool, error) {
+	scan := bufio.NewScanner(r)
 	scan.Buffer(make([]byte, 64*1024), 512*1024)
 	for scan.Scan() {
 		line := bytes.TrimSpace(scan.Bytes())

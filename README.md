@@ -20,7 +20,6 @@ This is an early implementation. The current tree includes:
 Still to complete:
 
 - `Match` block parsing and evaluation
-- `AuthorizedKeysCommand` / `AuthorizedPrincipalsCommand` execution
 - full certificate option parity
 - optional PAM backend
 - broader OpenSSH configuration compatibility and hardening work

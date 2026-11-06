@@ -402,12 +402,11 @@ func (p *parser) apply(key string, args []string, source string) error {
 		}
 		p.cfg.AuthorizedKeysFile = append(p.cfg.AuthorizedKeysFile, args...)
 	case "authorizedkeyscommand":
-		v, err := one()
-		if err != nil {
+		if err := require(1); err != nil {
 			return err
 		}
 		if p.first(k) {
-			p.cfg.AuthorizedKeysCommand = v
+			p.cfg.AuthorizedKeysCommand = append([]string(nil), args...)
 		}
 	case "authorizedkeyscommanduser":
 		v, err := one()
@@ -416,6 +415,21 @@ func (p *parser) apply(key string, args []string, source string) error {
 		}
 		if p.first(k) {
 			p.cfg.AuthorizedKeysCommandUser = v
+		}
+	case "authorizedprincipalscommand":
+		if err := require(1); err != nil {
+			return err
+		}
+		if p.first(k) {
+			p.cfg.AuthorizedPrincipalsCommand = append([]string(nil), args...)
+		}
+	case "authorizedprincipalscommanduser":
+		v, err := one()
+		if err != nil {
+			return err
+		}
+		if p.first(k) {
+			p.cfg.AuthorizedPrincipalsCommandUser = v
 		}
 	case "trustedusercakeys":
 		v, err := one()

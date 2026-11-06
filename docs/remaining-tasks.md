@@ -42,8 +42,8 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | CFG-01 | Core `sshd_config` parser: comments, quotes, first-value semantics, common directives, unknown-keyword rejection | Done | `TestParseBasic`, `TestFirstValueWins`, `TestQuotesAndComments`, `TestUnknownKeyword`, `TestParseOption` | Smoke configs use `Port`, `ListenAddress`, `HostKey`, auth, `AuthorizedKeysFile`, and `Subsystem` |
 | CFG-02 | `Include` directive with glob expansion and recursion protection | Done | Parser tests cover basic parsing; no dedicated Include test | Not covered |
 | CFG-03 | `Match` blocks for User, Group, Address, LocalAddress, LocalPort, All; Match-scoped directives | Pending | No tests | Not covered; parser currently rejects Match |
-| CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Partial | Parsed only; startup warning emitted; no execution test | Not covered |
-| CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Pending | Not implemented | Not covered |
+| CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Done | Root-owned absolute command validation, argv/token expansion, privilege drop, timeout/output limits, and reader-based key parsing; unit tests | `auth` suite logs in via command-provided keys |
+| CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Done | Command execution and principal parsing share the validated command path; unit tests | `cert` suite logs in via command-provided principals |
 | CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Done | Parsed alternatives, startup validation, per-connection auth-progress state machine, and `PartialSuccessError` callbacks; unit tests cover completion/partial/wrong-order cases | `auth` suite covers publickey+password success, single-factor failure, and wrong second factor |
 | CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*` and `TCPKeepAlive` are applied; compression, DNS, and forwarding options remain acknowledged only | `interop` exercises client-alive and TCP keepalive paths |
 | CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` and `-T` manually verified | Smoke suite starts daemon with generated config; no negative config E2E |
@@ -178,8 +178,7 @@ The following areas are implemented and have at least smoke or unit verification
 ### Milestone B: configuration compatibility
 
 1. Implement Match parsing and evaluation.
-2. Implement `AuthorizedKeysCommand` and `AuthorizedPrincipalsCommand`.
-3. Add config E2E fixtures for Include, Match, weak algorithms, and unsupported directives.
+2. Add config E2E fixtures for Include, Match, weak algorithms, and unsupported directives.
 
 ### Milestone C: operational readiness
 
