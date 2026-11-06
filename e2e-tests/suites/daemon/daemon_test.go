@@ -187,3 +187,32 @@ func TestInetdMode(t *testing.T) {
 		t.Fatalf("inetd process did not exit: %s", raw)
 	}
 }
+
+func TestLoginGraceTime(t *testing.T) {
+	requireRoot(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	port := sshdtest.FreePort(t)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", baseConfig(hostPath, port)+"LoginGraceTime 1\n")
+	sshdtest.Start(t, binPath(t), cfgPath, port)
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1024)
+	for {
+		_, err := conn.Read(buf)
+		if err == nil {
+			continue
+		}
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			t.Fatal("connection was not closed by LoginGraceTime")
+		}
+		return
+	}
+}

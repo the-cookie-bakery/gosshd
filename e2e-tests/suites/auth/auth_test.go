@@ -612,3 +612,33 @@ StrictModes yes
 		t.Fatal("client restricted to ssh-rsa connected to an RSA host key")
 	}
 }
+
+func TestSessionSandboxWrites(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	srv := startServer(t, u, "")
+	deniedDir, err := os.MkdirTemp("/", "gosshd-sandbox-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(deniedDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(deniedDir)
+
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	defer client.Close()
+	if out, err := sshdtest.Run(t, client, "echo nope > "+deniedDir+"/file"); err == nil {
+		t.Fatalf("sandbox allowed write outside allowlist: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(deniedDir, "file")); err == nil {
+		t.Fatal("sandboxed write created a file")
+	}
+	if out, err := sshdtest.Run(t, client, "echo ok > $HOME/sandbox-ok"); err != nil {
+		t.Fatalf("home write failed: %v: %s", err, out)
+	}
+	if out, err := sshdtest.Run(t, client, "echo ok > /tmp/gosshd-sandbox-ok"); err != nil {
+		t.Fatalf("tmp write failed: %v: %s", err, out)
+	}
+}

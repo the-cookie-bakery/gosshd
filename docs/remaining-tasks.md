@@ -86,14 +86,14 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | --- | --- | --- | --- | --- |
 | PRIV-01 | Privileged monitor, unprivileged per-connection worker, per-session launcher | Done | Manual process inspection in container | Sessions run as target user in smoke suite; E2E does not yet assert worker uid separation |
 | PRIV-02 | Host private keys stay in monitor; host-key signing over RPC | Done | No dedicated unit test | Host-key handshake succeeds in smoke suite |
-| PRIV-03 | Session launcher drops uid/gid/groups, applies `no_new_privs`, limits, env, chroot | Partial | No dedicated unit test | Password/key/PTY/SFTP sessions in smoke suite |
+| PRIV-03 | Session launcher drops uid/gid/groups, applies `no_new_privs`, limits, env, chroot | Done | Session sandbox tests plus launcher unit tests | `privsep` and `sftp` suites verify uid, chroot, and sandbox behavior |
 | PRIV-04 | Monitor-side verification of public-key userauth signatures | Done | `VerifiedPublicKeyCallback` re-confirms authorization after signature proof; no vendored patch | Covered indirectly by key and certificate suites |
 | PRIV-05 | Drop monitor capabilities after startup | Done | `internal/privsep/caps.go` drops the bounding set and effective/permitted set across all Go threads; fail-closed when root | `privsep` suite asserts monitor `CapEff`/`CapBnd` and per-thread consistency |
-| PRIV-06 | Worker and session sandboxing (seccomp/Landlock) | Partial | Worker seccomp deny-list with `TSYNC`; session Landlock deferred | All suites pass with the worker sandbox enabled |
+| PRIV-06 | Worker and session sandboxing (seccomp/Landlock) | Done | Worker seccomp deny-list with `TSYNC`; session Landlock write sandbox with fail-closed startup and ABI mask tests | `auth` suite verifies allowed/denied writes; all suites pass |
 | PRIV-07 | Bounded RPC protocol hardening and malformed-message handling | Done | Length-limited framing, fd passing, and `FuzzPacketDecode`; config and authorized_keys fuzz targets | Not covered |
 | PRIV-08 | Forged worker RPC tests: cannot impersonate another user or open unauthorized sessions | Done | Socket-level tests cover unauthenticated `session_open`, unknown-session operations, malformed payloads, and per-connection state isolation | Worker isolation and capability assertions covered by `privsep` suite |
 | PRIV-09 | Chroot path ownership and component validation | Done | `resolveChroot` expands tokens and rejects relative, missing, symlinked, non-root, or writable components; `chroot_test.go` | Not covered; unit tests cover validation |
-| PRIV-10 | Process cleanup and session reaping under disconnect/timeout | Partial | Basic cleanup implemented | Not covered |
+| PRIV-10 | Process cleanup and session reaping under disconnect/timeout | Done | `TestDisconnectCleanup` and `TestLoginGraceTime` | `privsep` and `daemon` suites verify reaping and timeout |
 | PRIV-11 | Concurrent RPC dispatch without head-of-line blocking | Done | `handleConn` dispatches packets on goroutines, session state is mutex-guarded, cleanup drains handlers; race tests pass | Concurrent-session and signal smoke regressions added |
 
 ### 3.5 Sessions, PTY, and SFTP
@@ -103,14 +103,14 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | SESS-01 | `pty-req`, `shell`, `exec`, `subsystem`, `window-change`, `signal` handling | Done | No dedicated unit test | Exec and PTY execution in smoke suite |
 | SESS-02 | PTY allocation, resize, and exit status propagation | Done | No dedicated unit test | PTY execution in smoke suite |
 | SESS-03 | Environment filtering through `AcceptEnv`, `SetEnv`, `PermitUserEnvironment` | Done | No dedicated unit test | Not covered |
-| SESS-04 | `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory` | Partial | `auth` suite covers ForceCommand, PermitTTY, and MaxSessions | `ChrootDirectory` session E2E still pending |
+| SESS-04 | `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory` | Done | `auth` suite covers ForceCommand, PermitTTY, and MaxSessions | `sftp` suite covers chrooted sessions |
 | SESS-05 | `~/.ssh/rc` and `/etc/ssh/sshrc` execution | Done | Executed before shell/command with `SSH_CLIENT`/`SSH_CONNECTION`; `TestUserRC` covers enabled/disabled | `auth` suite verifies rc execution and `PermitUserRC no` |
 | SESS-06 | MOTD and last-login rendering | Done | `readMotd`, `readLastLog`, and `logininfo` unit tests | `auth` suite verifies MOTD and last-login output |
 | SESS-07 | Apply terminal modes from `pty-req` | Done | RFC 4254 mode decoder and termios application with unit tests | `auth` suite uses `stty -a` to verify ECHO changes |
 | SESS-08 | Client-alive messages and disconnect threshold | Done | Keepalive state machine unit tests; liveness treats any reply as alive | `interop` suite keeps a session alive across the interval |
 | SESS-09 | Global request handling: keepalive, `no-more-sessions@openssh.com` | Done | Dedicated handler replies to keepalive, latches no-more-sessions, rejects forwarding globals | `interop` suite covers no-more-sessions and forwarding rejection |
 | SESS-10 | Session max-channel and concurrent-session enforcement | Done | `MaxSessions` enforced in monitor | `auth` suite covers the limit |
-| SESS-11 | Session unit tests for request parsing, env filtering, exit status, and signals | Partial | `TestBuildEnv`, `TestApplyTerminalMode`, `TestReadMotd`, `TestReadLastLog` | Exit status and signals covered by `smoke` E2E |
+| SESS-11 | Session unit tests for request parsing, env filtering, exit status, and signals | Done | `TestBuildEnv`, `TestApplyTerminalMode`, `TestReadMotd`, `TestReadLastLog`, `TestSignalNumber` | Exit status and signals covered by `smoke` E2E |
 | SFTP-01 | In-process `internal-sftp` subsystem | Done | No dedicated unit test | SFTP write/read in smoke suite |
 | SFTP-02 | Configured external subsystem execution | Done | `sftp` suite runs a configured external subsystem | Passing |
 | SFTP-03 | SFTP chroot and permission behavior | Done | `sftp` suite writes through chrooted internal SFTP | Passing |

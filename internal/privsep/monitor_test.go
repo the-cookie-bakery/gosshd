@@ -4,6 +4,7 @@ import (
 	"net"
 	"os/user"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -150,5 +151,23 @@ func TestBuildEnv(t *testing.T) {
 		if strings.HasPrefix(kv, "SECRET=") {
 			t.Fatalf("unexpected env %q", kv)
 		}
+	}
+}
+
+func TestSignalNumber(t *testing.T) {
+	cases := map[string]syscall.Signal{
+		"HUP":  syscall.SIGHUP,
+		"INT":  syscall.SIGINT,
+		"TERM": syscall.SIGTERM,
+		"KILL": syscall.SIGKILL,
+		"USR1": syscall.SIGUSR1,
+	}
+	for name, want := range cases {
+		if got := signalNumber(name); got != want {
+			t.Fatalf("signalNumber(%q)=%v want %v", name, got, want)
+		}
+	}
+	if got := signalNumber("UNKNOWN"); got != syscall.SIGTERM {
+		t.Fatalf("unknown signal=%v", got)
 	}
 }

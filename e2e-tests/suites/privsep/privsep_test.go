@@ -235,3 +235,64 @@ func assertUnprivilegedAccessDenied(t *testing.T, worker *procInfo, hostKeyPath 
 		}
 	}
 }
+
+func TestDisconnectCleanup(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root inside the test container")
+	}
+	bin := os.Getenv("GOSSHD_BIN")
+	if bin == "" {
+		t.Fatal("GOSSHD_BIN is not set")
+	}
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	port := sshdtest.FreePort(t)
+	cfg := fmt.Sprintf(`Port %d
+ListenAddress 127.0.0.1
+HostKey %s
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+UsePAM no
+AuthorizedKeysFile .ssh/authorized_keys
+StrictModes yes
+`, port, hostPath)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", cfg)
+	sshdtest.Start(t, bin, cfgPath, port)
+
+	client := sshdtest.Dial(t, port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Start("sleep 987654"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	marker := "sleep 987654"
+	if !processExistsWithCmdline(t, marker) {
+		t.Fatal("session process not found before disconnect")
+	}
+	client.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !processExistsWithCmdline(t, marker) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("session process survived client disconnect")
+}
+
+func processExistsWithCmdline(t *testing.T, marker string) bool {
+	t.Helper()
+	for _, p := range listProcs(t) {
+		if strings.Contains(p.cmdline, marker) {
+			return true
+		}
+	}
+	return false
+}

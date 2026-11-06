@@ -223,13 +223,14 @@ Implemented:
 - the monitor owns remote/local connection identity; worker-supplied addresses are diagnostic only
 - the monitor drops unnecessary capabilities across all runtime threads after startup (fail-closed)
 - workers install a seccomp deny-list with `TSYNC` before serving SSH
+- sessions install a Landlock write sandbox before chroot/exec; sandbox failures are fatal
 - host private keys are not loaded by workers
 - worker RPC protocol bounds message size and uses fd passing
 
 Remaining hardening:
 
-- add session-process Landlock/seccomp policy (worker sandbox is done)
 - extend fuzzing to certificate parsing and deeper SFTP paths
+- add hosted CI and container leak checks
 
 ## 9. End-to-end test harness
 

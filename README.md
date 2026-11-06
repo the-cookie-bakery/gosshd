@@ -12,7 +12,7 @@ This is an early implementation. The current tree includes:
 - `authorized_keys` parsing with key options and `cert-authority` entries
 - OpenSSH user/host certificate support
 - rate limiting, failure delay, and `RequiredRSASize` enforcement
-- privileged monitor, unprivileged per-connection workers, and per-session launchers
+- privileged monitor, unprivileged per-connection workers, per-session launchers, worker seccomp, and session Landlock write sandboxing
 - PTY, shell, `exec`, environment, signal, resize, and exit-status handling
 - in-process `internal-sftp` and external subsystem support
 - Podman-based end-to-end test harness with Debian, Ubuntu, and Fedora images

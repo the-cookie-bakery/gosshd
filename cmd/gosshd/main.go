@@ -162,6 +162,10 @@ func run(args []string) int {
 		return 0
 	}
 
+	if err := session.CheckSandbox(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	monitor := privsep.NewMonitor(cfg, authenticator, signers)
 	if !*inetd {
 		listeners, activated, err := systemdListeners()

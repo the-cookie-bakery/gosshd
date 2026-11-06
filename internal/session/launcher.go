@@ -29,6 +29,12 @@ func Run(spec *privsep.SessionSpec) error {
 	_ = unix.Umask(0o077)
 	_ = unix.Setrlimit(unix.RLIMIT_CORE, &unix.Rlimit{Cur: 0, Max: 0})
 	_ = unix.Setrlimit(unix.RLIMIT_NOFILE, &unix.Rlimit{Cur: 4096, Max: 4096})
+	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
+		return fmt.Errorf("no_new_privs: %w", err)
+	}
+	if err := applySessionSandbox(spec); err != nil {
+		return fmt.Errorf("session sandbox: %w", err)
+	}
 	if spec.Chroot != "" {
 		if err := syscall.Chroot(spec.Chroot); err != nil {
 			return fmt.Errorf("chroot: %w", err)
@@ -52,9 +58,6 @@ func Run(spec *privsep.SessionSpec) error {
 	}
 	if err := syscall.Setuid(int(spec.UID)); err != nil {
 		return fmt.Errorf("setuid: %w", err)
-	}
-	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
-		return fmt.Errorf("no_new_privs: %w", err)
 	}
 	env := spec.Env
 	if spec.Command == "" || len(env) == 0 {

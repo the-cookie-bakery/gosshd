@@ -107,3 +107,4 @@ Last-login information (when PrintLastLog is enabled).
 .SH NOTES
 Forwarding, PAM, FIPS mode, and Ed448 are not supported in this build.
 Authorized command output is treated as untrusted input.
+Session processes are confined with Landlock: writes are allowed only under the user's home directory, /tmp, /var/tmp, /dev/shm, /dev, /proc, the session's runtime directory, and the configured chroot directory. The daemon refuses to start if the session sandbox is unavailable.
