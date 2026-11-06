@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	mrand "math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -35,6 +36,7 @@ type HostKeyPublic struct {
 type WorkerInit struct {
 	Config   *config.Config
 	HostKeys []HostKeyPublic
+	Banner   string
 }
 
 type SessionSpec struct {
@@ -90,6 +92,8 @@ type sessionState struct {
 	local    net.Addr
 	resolved *config.Config
 
+	releaseStartup func()
+
 	authMu   sync.Mutex
 	authDone []string
 }
@@ -102,6 +106,12 @@ func (st *sessionState) setPerms(p *auth.Permissions) {
 	st.mu.Lock()
 	st.perms = p
 	st.mu.Unlock()
+}
+
+func (st *sessionState) markAuthenticated() {
+	if st.releaseStartup != nil {
+		st.releaseStartup()
+	}
 }
 
 func (st *sessionState) getPerms() *auth.Permissions {
@@ -169,14 +179,17 @@ type Monitor struct {
 	workerGID uint32
 	drop      bool
 	limiter   *authLimiter
-	startups  chan struct{}
 	listeners []net.Listener
 	wg        sync.WaitGroup
 	cfgMu     sync.RWMutex
+
+	startupMu    sync.Mutex
+	startupCount int
+	randIntN     func(int) int
 }
 
 func NewMonitor(cfg *config.Config, a *auth.Authenticator, signers []ssh.Signer) *Monitor {
-	m := &Monitor{cfg: cfg, auth: a, signers: signers, limiter: newAuthLimiter(), startups: make(chan struct{}, maxInt(cfg.MaxStartups, 1))}
+	m := &Monitor{cfg: cfg, auth: a, signers: signers, limiter: newAuthLimiter(), randIntN: mrand.IntN}
 	if os.Geteuid() == 0 {
 		if u, err := nss.LookupUser("nobody"); err == nil {
 			m.workerUID = u.UID
@@ -210,6 +223,34 @@ func (m *Monitor) Reload(cfg *config.Config, authenticator *auth.Authenticator) 
 	m.cfgMu.Unlock()
 }
 
+func (m *Monitor) acceptStartup() bool {
+	cfg := m.configSnapshot()
+	randIntN := m.randIntN
+	if randIntN == nil {
+		randIntN = mrand.IntN
+	}
+	m.startupMu.Lock()
+	defer m.startupMu.Unlock()
+	if m.startupCount >= cfg.MaxStartupsFull {
+		return false
+	}
+	if m.startupCount >= cfg.MaxStartups && cfg.MaxStartupsRate > 0 {
+		if randIntN(100) < cfg.MaxStartupsRate {
+			return false
+		}
+	}
+	m.startupCount++
+	return true
+}
+
+func (m *Monitor) releaseStartup() {
+	m.startupMu.Lock()
+	if m.startupCount > 0 {
+		m.startupCount--
+	}
+	m.startupMu.Unlock()
+}
+
 func (m *Monitor) Listen() error {
 	addrs, err := m.configSnapshot().Listeners()
 	if err != nil {
@@ -231,7 +272,7 @@ func (m *Monitor) SetListeners(listeners []net.Listener) {
 }
 
 func (m *Monitor) ServeConn(conn net.Conn) {
-	m.handleConn(conn)
+	m.handleConn(conn, nil)
 }
 
 func (m *Monitor) Addrs() []net.Addr {
@@ -260,15 +301,12 @@ func (m *Monitor) Serve(ctx context.Context) error {
 					}
 					continue
 				}
-				select {
-				case m.startups <- struct{}{}:
-					go func() {
-						defer func() { <-m.startups }()
-						m.handleConn(conn)
-					}()
-				default:
+				if !m.acceptStartup() {
 					conn.Close()
+					continue
 				}
+				release := sync.OnceFunc(m.releaseStartup)
+				go m.handleConn(conn, release)
 			}
 		}(ln)
 	}
@@ -284,7 +322,10 @@ func (m *Monitor) Close() error {
 	return nil
 }
 
-func (m *Monitor) handleConn(conn net.Conn) {
+func (m *Monitor) handleConn(conn net.Conn, releaseStartup func()) {
+	if releaseStartup != nil {
+		defer releaseStartup()
+	}
 	mon, worker, err := unixSocketpair()
 	if err != nil {
 		conn.Close()
@@ -303,6 +344,18 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	conn.Close()
 
 	initData := WorkerInit{Config: m.configSnapshot().Clone()}
+	if initData.Config.Banner != "" {
+		banner, err := loadBanner(initData.Config.Banner)
+		if err != nil {
+			if os.IsNotExist(err) {
+				logging.Debugf("banner file %s does not exist", initData.Config.Banner)
+			} else {
+				logging.Warningf("banner file %s: %v", initData.Config.Banner, err)
+			}
+		} else {
+			initData.Banner = banner
+		}
+	}
 	for _, s := range m.signers {
 		algorithms := []string{s.PublicKey().Type()}
 		if multi, ok := s.(ssh.MultiAlgorithmSigner); ok {
@@ -344,6 +397,7 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	st := newSessionState()
 	st.remote = remoteAddr
 	st.local = localAddr
+	st.releaseStartup = releaseStartup
 	m.serveControl(pc, st)
 	cmd.Wait()
 }
@@ -461,6 +515,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if final {
 			st.setPerms(perms)
 			st.setResolved(cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
+			st.markAuthenticated()
 			return &Result{OK: true, Permissions: perms}
 		}
 		return &Result{OK: true, Partial: true, NextMethods: next}
@@ -493,6 +548,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if final {
 			st.setPerms(perms)
 			st.setResolved(cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
+			st.markAuthenticated()
 			return &Result{OK: true, Permissions: perms}
 		}
 		return &Result{OK: true, Partial: true, NextMethods: next}
@@ -842,11 +898,4 @@ func connFile(c net.Conn) (*os.File, error) {
 		return f.File()
 	}
 	return nil, fmt.Errorf("cannot duplicate connection")
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

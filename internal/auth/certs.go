@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cookiengineer/gosshd/internal/config"
+	"github.com/cookiengineer/gosshd/internal/crypto"
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
 
@@ -38,7 +39,7 @@ func (a *Authenticator) lookupAuthorizedCertAuthorities(cfg *config.Config, u *n
 		if err != nil {
 			continue
 		}
-		perms, found, err := scanCertAuthority(f, cert, u, remote)
+		perms, found, err := scanCertAuthority(f, cert, u, remote, cfg.CASignatureAlgorithms)
 		f.Close()
 		if err != nil {
 			continue
@@ -50,7 +51,7 @@ func (a *Authenticator) lookupAuthorizedCertAuthorities(cfg *config.Config, u *n
 	if a.keysCommand != nil {
 		ctx := certTokenContext(u, cert, remote, local)
 		if data, err := a.keysCommand.run(ctx, true); err == nil {
-			if perms, found, err := scanCertAuthority(bytes.NewReader(data), cert, u, remote); err == nil && found {
+			if perms, found, err := scanCertAuthority(bytes.NewReader(data), cert, u, remote, cfg.CASignatureAlgorithms); err == nil && found {
 				return perms, true, nil
 			}
 		}
@@ -58,7 +59,7 @@ func (a *Authenticator) lookupAuthorizedCertAuthorities(cfg *config.Config, u *n
 	return nil, false, nil
 }
 
-func scanCertAuthority(r io.Reader, cert *ssh.Certificate, u *nss.User, remote net.Addr) (*Permissions, bool, error) {
+func scanCertAuthority(r io.Reader, cert *ssh.Certificate, u *nss.User, remote net.Addr, caAlgorithms []string) (*Permissions, bool, error) {
 	scan := bufio.NewScanner(r)
 	scan.Buffer(make([]byte, 64*1024), 512*1024)
 	for scan.Scan() {
@@ -95,6 +96,9 @@ func scanCertAuthority(r io.Reader, cert *ssh.Certificate, u *nss.User, remote n
 			}
 		}
 		if !valid {
+			continue
+		}
+		if !caSignatureAllowed(cert, caAlgorithms) {
 			continue
 		}
 		perms, err := certificatePermissions(cert, remote)
@@ -175,7 +179,25 @@ func (a *Authenticator) lookupCertificate(cfg *config.Config, u *nss.User, cert 
 	if err := checker.CheckCert(principal, cert); err != nil {
 		return nil, ErrAccessDenied
 	}
+	if !caSignatureAllowed(cert, cfg.CASignatureAlgorithms) {
+		return nil, ErrAccessDenied
+	}
 	return certificatePermissions(cert, remote)
+}
+
+func caSignatureAllowed(cert *ssh.Certificate, allowed []string) bool {
+	if cert == nil || cert.Signature == nil {
+		return false
+	}
+	if len(allowed) == 0 {
+		allowed = crypto.DefaultCASignatureAlgorithms
+	}
+	for _, algorithm := range allowed {
+		if algorithm == cert.Signature.Format {
+			return true
+		}
+	}
+	return false
 }
 
 func certificatePermissions(cert *ssh.Certificate, remote net.Addr) (*Permissions, error) {

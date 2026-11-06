@@ -55,7 +55,28 @@ var (
 		ssh.KeyAlgoRSASHA512,
 		ssh.KeyAlgoRSASHA256,
 	}
+	DefaultCASignatureAlgorithms = []string{
+		ssh.KeyAlgoED25519,
+		ssh.KeyAlgoECDSA256,
+		ssh.KeyAlgoECDSA384,
+		ssh.KeyAlgoECDSA521,
+		ssh.KeyAlgoSKED25519,
+		ssh.KeyAlgoSKECDSA256,
+		ssh.KeyAlgoRSASHA512,
+		ssh.KeyAlgoRSASHA256,
+	}
 )
+
+var signingAlgorithms = map[string]bool{
+	ssh.KeyAlgoED25519:    true,
+	ssh.KeyAlgoSKED25519:  true,
+	ssh.KeyAlgoSKECDSA256: true,
+	ssh.KeyAlgoECDSA256:   true,
+	ssh.KeyAlgoECDSA384:   true,
+	ssh.KeyAlgoECDSA521:   true,
+	ssh.KeyAlgoRSASHA512:  true,
+	ssh.KeyAlgoRSASHA256:  true,
+}
 
 var insecure = map[string]bool{
 	ssh.InsecureKeyExchangeDH1SHA1:   true,
@@ -132,6 +153,11 @@ func Apply(cfg *config.Config) error {
 	} else if err := check(cfg.PubkeyAcceptedAlgorithms, "PubkeyAcceptedAlgorithms"); err != nil {
 		return err
 	}
+	if len(cfg.CASignatureAlgorithms) == 0 {
+		cfg.CASignatureAlgorithms = append([]string(nil), DefaultCASignatureAlgorithms...)
+	} else if err := checkSigningAlgorithms(cfg.CASignatureAlgorithms, "CASignatureAlgorithms"); err != nil {
+		return err
+	}
 	if cfg.RequiredRSASize == 0 {
 		cfg.RequiredRSASize = 2048
 	}
@@ -148,6 +174,18 @@ func check(values []string, name string) error {
 		}
 		if !knownModern[v] {
 			return fmt.Errorf("%s contains unsupported algorithm %q", name, v)
+		}
+	}
+	return nil
+}
+
+func checkSigningAlgorithms(values []string, name string) error {
+	for _, v := range values {
+		if insecure[v] {
+			return fmt.Errorf("%s contains unsupported insecure algorithm %q", name, v)
+		}
+		if !signingAlgorithms[v] {
+			return fmt.Errorf("%s contains unsupported signing algorithm %q", name, v)
 		}
 	}
 	return nil

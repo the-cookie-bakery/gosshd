@@ -11,12 +11,25 @@ HostKey /etc/ssh/ssh_host_rsa_key
 PidFile /run/gosshd.pid
 LogLevel INFO
 SyslogFacility AUTH
+MaxStartups 10:30:100
+
+# Optional pre-authentication banner. Only the global Banner directive is
+# supported; Banner inside Match is rejected.
+# Banner /etc/ssh/banner.txt
+
+# UseDNS yes and Compression yes|delayed are rejected because reverse-DNS
+# matching and transport compression are not implemented.
+UseDNS no
+Compression no
 
 # Modern algorithms are the default; listings are shown for clarity.
 KexAlgorithms mlkem768x25519-sha256,curve25519-sha256,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group16-sha512,diffie-hellman-group14-sha256
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
 RequiredRSASize 2048
+# Signature algorithms accepted from user-certificate authorities.
+# ssh-rsa (SHA-1) is always rejected.
+CASignatureAlgorithms ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,rsa-sha2-512,rsa-sha2-256
 
 # Authentication
 PasswordAuthentication yes

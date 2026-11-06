@@ -251,6 +251,9 @@ func reloadCompatible(old, next *config.Config) error {
 	if old.MaxStartups != next.MaxStartups {
 		return fmt.Errorf("reload: MaxStartups changes require a restart")
 	}
+	if old.MaxStartupsRate != next.MaxStartupsRate || old.MaxStartupsFull != next.MaxStartupsFull {
+		return fmt.Errorf("reload: MaxStartups changes require a restart")
+	}
 	return nil
 }
 

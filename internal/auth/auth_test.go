@@ -279,3 +279,79 @@ func TestReadPrincipalsReader(t *testing.T) {
 		t.Fatal("expected empty principals to fail")
 	}
 }
+
+func TestCASignatureAlgorithmsEnforced(t *testing.T) {
+	dir := t.TempDir()
+	caPub, caPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshCAPub, err := ssh.NewPublicKey(caPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshUserPub, err := ssh.NewPublicKey(userPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := &ssh.Certificate{
+		Key:             sshUserPub,
+		CertType:        ssh.UserCert,
+		ValidPrincipals: []string{"test"},
+		ValidAfter:      uint64(time.Now().Add(-time.Minute).Unix()),
+		ValidBefore:     uint64(time.Now().Add(time.Hour).Unix()),
+	}
+	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
+		t.Fatal(err)
+	}
+	if cert.Signature.Format != ssh.KeyAlgoED25519 {
+		t.Fatalf("unexpected certificate signature format %q", cert.Signature.Format)
+	}
+
+	caPath := filepath.Join(dir, "user_ca.pub")
+	if err := os.WriteFile(caPath, ssh.MarshalAuthorizedKey(sshCAPub), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	akPath := filepath.Join(dir, "authorized_keys")
+	line := append([]byte(`cert-authority,principals="test" `), ssh.MarshalAuthorizedKey(sshCAPub)...)
+	if err := os.WriteFile(akPath, line, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.AuthorizedKeysFile = []string{akPath}
+	cfg.TrustedUserCAKeys = []string{caPath}
+	cfg.StrictModes = false
+	a, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := &nss.User{Name: "test", Home: dir}
+	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.1")}
+
+	for _, algorithms := range [][]string{{ssh.KeyAlgoED25519}, nil} {
+		cfg.CASignatureAlgorithms = algorithms
+		if _, err := a.lookupAuthorizedKey(cfg, u, cert, remote, nil); err != nil {
+			t.Fatalf("authorized_keys cert-authority rejected allowed signature: %v", err)
+		}
+		if _, err := a.lookupCertificate(cfg, u, cert, remote, nil); err != nil {
+			t.Fatalf("TrustedUserCAKeys rejected allowed signature: %v", err)
+		}
+	}
+
+	cfg.CASignatureAlgorithms = []string{ssh.KeyAlgoRSASHA512}
+	if _, err := a.lookupAuthorizedKey(cfg, u, cert, remote, nil); err == nil {
+		t.Fatal("authorized_keys cert-authority accepted disallowed signature")
+	}
+	if _, err := a.lookupCertificate(cfg, u, cert, remote, nil); err == nil {
+		t.Fatal("TrustedUserCAKeys accepted disallowed signature")
+	}
+}

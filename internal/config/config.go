@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+const (
+	DefaultMaxStartupsStart = 10
+	DefaultMaxStartupsRate  = 30
+	DefaultMaxStartupsFull  = 100
+)
+
 type ListenAddress struct {
 	Host string
 	Port int
@@ -25,6 +31,10 @@ type Config struct {
 	LogLevel         string
 	SyslogFacility   string
 	MaxStartups      int
+	MaxStartupsRate  int
+	MaxStartupsFull  int
+	UseDNS           bool
+	Compression      string
 
 	MaxAuthTries                 int
 	MaxSessions                  int
@@ -67,6 +77,7 @@ type Config struct {
 	MACs                     []string
 	HostKeyAlgorithms        []string
 	PubkeyAcceptedAlgorithms []string
+	CASignatureAlgorithms    []string
 	RequiredRSASize          int
 	RekeyLimit               int64
 
@@ -88,7 +99,9 @@ func Default() *Config {
 		AddressFamily:                "any",
 		LogLevel:                     "INFO",
 		SyslogFacility:               "AUTH",
-		MaxStartups:                  10,
+		MaxStartups:                  DefaultMaxStartupsStart,
+		MaxStartupsRate:              DefaultMaxStartupsRate,
+		MaxStartupsFull:              DefaultMaxStartupsFull,
 		MaxAuthTries:                 6,
 		MaxSessions:                  10,
 		LoginGraceTime:               120 * time.Second,
@@ -102,6 +115,7 @@ func Default() *Config {
 		PermitUserRC:                 true,
 		PrintMotd:                    true,
 		PrintLastLog:                 true,
+		Compression:                  "no",
 		AuthorizedKeysFile:           []string{".ssh/authorized_keys", ".ssh/authorized_keys2"},
 		SetEnv:                       map[string]string{},
 		Subsystems:                   map[string]string{},
@@ -127,6 +141,7 @@ func (c *Config) Clone() *Config {
 	d.MACs = append([]string(nil), c.MACs...)
 	d.HostKeyAlgorithms = append([]string(nil), c.HostKeyAlgorithms...)
 	d.PubkeyAcceptedAlgorithms = append([]string(nil), c.PubkeyAcceptedAlgorithms...)
+	d.CASignatureAlgorithms = append([]string(nil), c.CASignatureAlgorithms...)
 	d.AuthenticationMethods = make([][]string, len(c.AuthenticationMethods))
 	for i := range c.AuthenticationMethods {
 		d.AuthenticationMethods[i] = append([]string(nil), c.AuthenticationMethods[i]...)

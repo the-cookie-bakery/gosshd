@@ -171,6 +171,12 @@ func RunWorker() error {
 		PublicKeyAuthAlgorithms: cfg.PubkeyAcceptedAlgorithms,
 		ServerVersion:           "SSH-2.0-gosshd",
 	}
+	if init.Banner != "" {
+		banner := init.Banner
+		serverCfg.BannerCallback = func(ssh.ConnMetadata) string {
+			return banner
+		}
+	}
 	for _, s := range signers {
 		serverCfg.AddHostKey(s)
 	}

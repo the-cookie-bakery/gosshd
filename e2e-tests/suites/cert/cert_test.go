@@ -105,6 +105,36 @@ func TestUserCertificate(t *testing.T) {
 	}
 }
 
+func TestCASignatureAlgorithmRestriction(t *testing.T) {
+	requireRoot(t)
+	u := sshdtest.NewUser(t)
+	caSigner, _ := sshdtest.NewKey(t)
+	userSigner, _ := sshdtest.NewKey(t)
+
+	dir := t.TempDir()
+	caPath := writePublic(t, dir, "user_ca.pub", caSigner.PublicKey())
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	srv := startServer(t, dir, hostPath, fmt.Sprintf("TrustedUserCAKeys %s\nCASignatureAlgorithms ssh-ed25519\n", caPath))
+
+	cert := signCert(t, caSigner, userSigner.PublicKey(), ssh.UserCert, []string{u.Name}, nil, nil)
+	certSigner, err := ssh.NewCertSigner(cert, userSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(certSigner)))
+	client.Close()
+
+	dir = t.TempDir()
+	caPath = writePublic(t, dir, "user_ca.pub", caSigner.PublicKey())
+	_, hostPath = sshdtest.NewHostKey(t, dir)
+	srv = startServer(t, dir, hostPath, fmt.Sprintf("TrustedUserCAKeys %s\nCASignatureAlgorithms rsa-sha2-512\n", caPath))
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(certSigner)))
+	if err == nil {
+		c.Close()
+		t.Fatal("certificate signed with a disallowed CA algorithm was accepted")
+	}
+}
+
 func TestRevokedCertificate(t *testing.T) {
 	requireRoot(t)
 	dir := t.TempDir()

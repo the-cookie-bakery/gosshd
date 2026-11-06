@@ -87,6 +87,9 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 | `RequiredRSASize` enforced for host, user, and certificate RSA keys | `internal/crypto`, `internal/auth` |
 | `authorized_keys` options, certificates, revocation, and `cert-authority` entries | `internal/auth` |
 | Monitor-owned connection identity for source/access checks | `internal/privsep/monitor.go` |
+| `CASignatureAlgorithms` enforced for `TrustedUserCAKeys` and `cert-authority` certificate signatures | `internal/config`, `internal/crypto`, `internal/auth` |
+| Pre-authentication `MaxStartups start:rate:full` accounting and banner delivery | `internal/config`, `internal/privsep` |
+| Security-relevant directives are rejected rather than silently ignored (`UseDNS yes`, compression enabled) | `internal/config` |
 | `AuthenticationMethods` composition with per-connection progress | `internal/privsep`, `internal/auth` |
 | `Match`-scoped policy resolved per connection with monitor-owned addresses | `internal/config`, `internal/auth`, `internal/privsep` |
 | Authorized-command execution: root-owned absolute binary, configured user, bounded output/time, no shell | `internal/auth/command.go` |

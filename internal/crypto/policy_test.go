@@ -104,3 +104,24 @@ func TestLoadHostSignersRSAMinimum(t *testing.T) {
 		t.Fatalf("expected 1024-bit RSA host key to be accepted: %v", err)
 	}
 }
+
+func TestCASignatureAlgorithmDefaultsAndValidation(t *testing.T) {
+	cfg := config.Default()
+	if err := Apply(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.CASignatureAlgorithms) == 0 {
+		t.Fatal("default CASignatureAlgorithms not applied")
+	}
+	cfg.CASignatureAlgorithms = []string{ssh.KeyAlgoED25519, ssh.KeyAlgoRSASHA512}
+	if err := Apply(cfg); err != nil {
+		t.Fatalf("valid algorithms rejected: %v", err)
+	}
+	for _, algorithm := range []string{ssh.KeyAlgoRSA, "ssh-dss", ssh.KeyAlgoED25519 + "-cert-v01@openssh.com", "bogus"} {
+		cfg := config.Default()
+		cfg.CASignatureAlgorithms = []string{algorithm}
+		if err := Apply(cfg); err == nil {
+			t.Fatalf("expected %q to be rejected", algorithm)
+		}
+	}
+}

@@ -11,7 +11,9 @@ This is an early implementation. The current tree includes:
 - NSS-aware account/shadow lookup through `getent` with a file fallback, plus pure-Go yescrypt/SHA-crypt/bcrypt verification
 - `authorized_keys` parsing with key options and `cert-authority` entries
 - OpenSSH user/host certificate support
-- rate limiting, failure delay, and `RequiredRSASize` enforcement
+- rate limiting, failure delay, `RequiredRSASize`, and `CASignatureAlgorithms` enforcement
+- pre-authentication banners and full `MaxStartups start:rate:full` accounting
+- explicit rejection of unsupported `UseDNS yes` and compression modes
 - privileged monitor, unprivileged per-connection workers, per-session launchers, worker seccomp, and session Landlock write sandboxing
 - PTY, shell, `exec`, environment, signal, resize, and exit-status handling
 - in-process `internal-sftp` and external subsystem support

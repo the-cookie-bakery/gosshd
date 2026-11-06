@@ -45,9 +45,12 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Done | Root-owned absolute command validation, argv/token expansion, privilege drop, timeout/output limits, and reader-based key parsing; unit tests | `auth` suite logs in via command-provided keys |
 | CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Done | Command execution and principal parsing share the validated command path; unit tests | `cert` suite logs in via command-provided principals |
 | CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Done | Parsed alternatives, startup validation, per-connection auth-progress state machine, and `PartialSuccessError` callbacks; unit tests cover completion/partial/wrong-order cases | `auth` suite covers publickey+password success, single-factor failure, and wrong second factor |
-| CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*` and `TCPKeepAlive` are applied; compression, DNS, and forwarding options remain acknowledged only | `interop` exercises client-alive and TCP keepalive paths |
+| CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*`, `TCPKeepAlive`, `MaxStartups`, and `Banner` are applied; `Compression yes` or `delayed` and `UseDNS yes` are rejected; forwarding options remain acknowledged only because forwarding is disabled | `interop` exercises client-alive and TCP keepalive paths |
 | CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` validates command paths/users and host-key permissions; `-T` dumps JSON rather than OpenSSH text | `config` suite covers negative host-key permission cases |
 | CFG-09 | Match/Include E2E fixtures | Done | `config`, `auth`, and existing Include fixtures | Passing |
+| CFG-10 | `Banner` file delivery before authentication | Done | `TestLoadBanner`; banner parsing test | `auth` suite verifies banner delivery |
+| CFG-11 | Reject unsupported `UseDNS yes` and `Compression yes` or `delayed` | Done | `TestUseDNSAndCompressionTruthfulness` | `config` suite rejects both settings |
+| CFG-12 | Full `MaxStartups start:rate:full` pre-authentication accounting | Done | `TestMaxStartupsParsing`, `TestAcceptStartupBoundaries`, `TestAcceptStartupRandomDrop` | `config` suite accepts triples and rejects invalid ordering |
 
 ### 3.2 Cryptography and host keys
 
@@ -59,6 +62,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | CRY-04 | Ed448 support from RFC 8709 | Pending | x/crypto does not implement Ed448 | Not covered |
 | CRY-05 | RSA minimum-size enforcement and warnings | Done | `RequiredRSASize` defaults to 2048; enforced for host, user, and certificate keys; `TestLoadHostSignersRSAMinimum`, `TestCheckRSASize` | Not covered |
 | CRY-06 | FIPS 140-3 mode verification | Pending | No test | Not covered |
+| CRY-07 | `CASignatureAlgorithms` validation and enforcement for user certificate CA signatures | Done | `TestCASignatureAlgorithmDefaultsAndValidation`, `TestCASignatureAlgorithmsEnforced` | `cert` suite verifies allowed and rejected CA algorithms |
 
 ### 3.3 Authentication, accounts, and access control
 
@@ -130,6 +134,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Done | `privsep` suite asserts uid separation, monitor capability reduction, empty worker capabilities, and `setpriv` access denial for shadow/host keys | Passing |
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Done | New `interop` suite | `ssh`, `scp`, and `sftp` pass |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Done | `interop` suite rejects direct-tcpip, remote forward, agent, and X11 requests | Passing |
+| E2E-11 | Configuration truthfulness negative E2E: `UseDNS`, `Compression`, weak CA algorithms, invalid `MaxStartups` | Done | N/A | `config` and `cert` suites cover the matrix |
 | E2E-12 | Failure artifact retention and container leak checks | Partial | Harness defaults/suffix unit tests; retention behavior remains manual | No leak-check test |
 
 ### 3.7 CLI, operations, and documentation
@@ -166,25 +171,23 @@ The following areas are implemented and have at least smoke or unit verification
 | SFTP | Internal SFTP write/read |
 | Crypto policy | Explicit modern allowlists and weak-algorithm rejection |
 
-## 5. Suggested next milestones
+## 5. Remaining work
 
-### Milestone A: security-critical corrections
+### Milestone E: verification sweep
 
-1. Add monitor capability dropping and worker/session sandboxing.
-2. Extend forged-RPC coverage to a socket-level forgery harness.
-3. Add shadow/host-key access-denial assertions to the `privsep` suite.
+1. Add the remaining authentication E2E cases: hash variants, `authorized_keys` option enforcement, keyboard-interactive, and `LoginGraceTime`.
+2. Add negative weak-algorithm E2E coverage for `CRY-01`.
+3. Cover systemd socket activation and syslog output in E2E.
+4. Add a container leak check and assert failure artifact retention.
 
-### Milestone B: configuration compatibility
+### Milestone F: operations and compatibility
 
-1. Add config E2E fixtures for Include, weak algorithms, and unsupported directives.
+1. Add hosted CI that runs `make ci` and the Podman E2E matrix.
+2. Implement OpenSSH-compatible `-T` text output and repeated `-o` options.
+3. Extend fuzzing to certificate parsing and deeper SFTP handling.
+4. Reassess `RekeyLimit` time components and enabling directives for unsupported authentication methods.
 
-### Milestone C: operational readiness
-
-1. Add rc-file, MOTD, last-login, terminal-mode parity, and session request parity.
-2. Add systemd socket activation, inetd mode, SIGHUP reload, and syslog integration.
-3. Add fuzzing and SFTP/session unit coverage.
-
-### Milestone D: optional PAM backend
+### Milestone G: optional PAM backend
 
 1. Implement the `PasswordVerifier` PAM backend behind the existing interface.
 2. Add PAM account and session management.
@@ -200,7 +203,7 @@ The v1 definition of done refers to P0/P1 work. Status rows do not carry a prior
 
 ### P1: v1 scope
 
-`AUTH-04`, `AUTH-05`, `AUTH-07`, `AUTH-08`, `AUTH-09`, `CFG-04`, `CFG-05`, `CFG-07`, `CFG-08`, `CFG-09`, `CRY-03`, `CRY-05`, `PRIV-04`, `PRIV-07`, `PRIV-10`, `SESS-04`, `SESS-05`, `SESS-06`, `SESS-07`, `SESS-10`, `SESS-11`, `SFTP-02`, `SFTP-03`, `SFTP-04`, `E2E-07`, `E2E-08`, `E2E-12`, `OPS-02`, `OPS-03`, `OPS-04`, `OPS-05`, `OPS-07`
+`AUTH-04`, `AUTH-05`, `AUTH-07`, `AUTH-08`, `AUTH-09`, `CFG-04`, `CFG-05`, `CFG-07`, `CFG-08`, `CFG-09`, `CFG-10`, `CFG-11`, `CFG-12`, `CRY-03`, `CRY-05`, `CRY-07`, `PRIV-04`, `PRIV-07`, `PRIV-10`, `SESS-04`, `SESS-05`, `SESS-06`, `SESS-07`, `SESS-10`, `SESS-11`, `SFTP-02`, `SFTP-03`, `SFTP-04`, `E2E-07`, `E2E-08`, `E2E-11`, `E2E-12`, `OPS-02`, `OPS-03`, `OPS-04`, `OPS-05`, `OPS-07`
 
 ### P2 and deferred
 

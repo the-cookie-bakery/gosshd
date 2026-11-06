@@ -52,9 +52,13 @@ func TestRecursiveIncludeRejected(t *testing.T) {
 func TestUnsupportedDirectivesRejected(t *testing.T) {
 	bin := requireBin(t)
 	for name, body := range map[string]string{
-		"unknown":     "DefinitelyNotAKeyword yes\n",
-		"weak-cipher": "Ciphers aes128-cbc\n",
-		"authmethods": "AuthenticationMethods publickey,bogus\n",
+		"unknown":       "DefinitelyNotAKeyword yes\n",
+		"weak-cipher":   "Ciphers aes128-cbc\n",
+		"authmethods":   "AuthenticationMethods publickey,bogus\n",
+		"usedns":        "UseDNS yes\n",
+		"compression":   "Compression delayed\n",
+		"weak-ca":       "CASignatureAlgorithms ssh-rsa\n",
+		"startup-order": "MaxStartups 20:30:10\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -89,6 +93,22 @@ func TestDumpDefaults(t *testing.T) {
 	}
 	if !strings.Contains(string(out), `"RequiredRSASize": 2048`) {
 		t.Fatalf("RequiredRSASize default missing: %s", out)
+	}
+	if !strings.Contains(string(out), `"MaxStartupsRate": 30`) || !strings.Contains(string(out), `"MaxStartupsFull": 100`) {
+		t.Fatalf("MaxStartups defaults missing: %s", out)
+	}
+	if !strings.Contains(string(out), `"CASignatureAlgorithms"`) {
+		t.Fatalf("CASignatureAlgorithms default missing: %s", out)
+	}
+}
+
+func TestTruthfulConfigAccepted(t *testing.T) {
+	bin := requireBin(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", fmt.Sprintf("HostKey %s\nMaxStartups 10:30:100\nUseDNS no\nCompression no\nCASignatureAlgorithms ssh-ed25519,rsa-sha2-512\n", hostPath))
+	if out, code := testConfig(t, bin, cfgPath); code != 0 {
+		t.Fatalf("truthful config rejected (%d): %s", code, out)
 	}
 }
 

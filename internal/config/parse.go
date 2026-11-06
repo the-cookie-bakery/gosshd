@@ -265,13 +265,14 @@ func (p *parser) apply(key string, args []string, source string) error {
 		if err != nil {
 			return err
 		}
-		first := strings.Split(v, ":")[0]
-		n, err := strconv.Atoi(first)
-		if err != nil || n < 0 {
-			return fmt.Errorf("invalid MaxStartups %q", v)
+		start, rate, full, err := parseMaxStartups(v)
+		if err != nil {
+			return err
 		}
 		if p.first(k) {
-			p.cfg.MaxStartups = n
+			p.cfg.MaxStartups = start
+			p.cfg.MaxStartupsRate = rate
+			p.cfg.MaxStartupsFull = full
 		}
 	case "maxauthtries":
 		v, err := one()
@@ -535,6 +536,32 @@ func (p *parser) apply(key string, args []string, source string) error {
 		if p.first(k) {
 			p.cfg.TCPKeepAlive = v
 		}
+	case "usedns":
+		v, err := yesNo()
+		if err != nil {
+			return err
+		}
+		if v {
+			return fmt.Errorf("reverse-DNS matching is unavailable; set UseDNS to no")
+		}
+		if p.first(k) {
+			p.cfg.UseDNS = false
+		}
+	case "compression":
+		v, err := one()
+		if err != nil {
+			return err
+		}
+		switch strings.ToLower(v) {
+		case "no":
+			if p.first(k) {
+				p.cfg.Compression = "no"
+			}
+		case "yes", "delayed":
+			return fmt.Errorf("compression %s is not supported; only compression none is available", v)
+		default:
+			return fmt.Errorf("invalid Compression %q", v)
+		}
 	case "kexalgorithms":
 		p.cfg.KexAlgorithms = splitComma(args)
 	case "ciphers":
@@ -557,7 +584,14 @@ func (p *parser) apply(key string, args []string, source string) error {
 		if p.first(k) {
 			p.cfg.RequiredRSASize = n
 		}
-	case "casignaturealgorithms", "rekeylimit", "fingerprinthash":
+	case "casignaturealgorithms":
+		if len(args) == 0 {
+			return errors.New("CASignatureAlgorithms requires an argument")
+		}
+		if p.first(k) {
+			p.cfg.CASignatureAlgorithms = splitComma(args)
+		}
+	case "rekeylimit", "fingerprinthash":
 		if k == "rekeylimit" && len(args) > 0 {
 			n, err := parseSize(args[0])
 			if err != nil {
@@ -615,7 +649,7 @@ func (p *parser) apply(key string, args []string, source string) error {
 		"x11forwarding", "x11displayoffset", "x11uselocalhost",
 		"permitopen", "permitlisten", "gatewayports", "permittunnel",
 		"disableforwarding", "refuseconnection", "showpatchlevel",
-		"compression", "usedns", "ipqos", "logverbose",
+		"ipqos", "logverbose",
 		"gssapiauthentication", "gssapicleanupcredentials",
 		"gssapidelegatecredentials", "gssapistrictacceptorcheck",
 		"hostbasedauthentication", "hostbasedacceptedalgorithms",
@@ -647,6 +681,35 @@ func splitComma(args []string) []string {
 		}
 	}
 	return out
+}
+
+func parseMaxStartups(v string) (int, int, int, error) {
+	parts := strings.Split(v, ":")
+	if len(parts) > 3 {
+		return 0, 0, 0, fmt.Errorf("invalid MaxStartups %q", v)
+	}
+	start, err := strconv.Atoi(parts[0])
+	if err != nil || start < 0 {
+		return 0, 0, 0, fmt.Errorf("invalid MaxStartups %q", v)
+	}
+	rate := DefaultMaxStartupsRate
+	full := DefaultMaxStartupsFull
+	if len(parts) >= 2 {
+		rate, err = strconv.Atoi(parts[1])
+		if err != nil || rate < 0 || rate > 100 {
+			return 0, 0, 0, fmt.Errorf("invalid MaxStartups %q", v)
+		}
+	}
+	if len(parts) == 3 {
+		full, err = strconv.Atoi(parts[2])
+		if err != nil || full < 0 {
+			return 0, 0, 0, fmt.Errorf("invalid MaxStartups %q", v)
+		}
+	}
+	if start > full {
+		return 0, 0, 0, fmt.Errorf("invalid MaxStartups %q: start must not exceed full", v)
+	}
+	return start, rate, full, nil
 }
 
 func splitListenAddress(v string) (string, int) {

@@ -29,8 +29,10 @@ launcher that drops to the target account. Forwarding is disabled.
 Configuration is read from
 .I /etc/ssh/sshd_config
 by default. The parser supports includes, first-value-wins semantics, Match
-blocks, modern algorithm allowlists, authorized commands, and explicit
-rejection of unsupported or weak directives.
+blocks, a pre-authentication Banner, CASignatureAlgorithms enforcement,
+full MaxStartups start:rate:full semantics, modern algorithm allowlists,
+authorized commands, and explicit rejection of unsupported or weak
+directives.
 .SH OPTIONS
 .TP
 .B \-4
@@ -107,4 +109,11 @@ Last-login information (when PrintLastLog is enabled).
 .SH NOTES
 Forwarding, PAM, FIPS mode, and Ed448 are not supported in this build.
 Authorized command output is treated as untrusted input.
+.B UseDNS yes
+is rejected because reverse-DNS host matching is not implemented; use
+IP addresses or CIDR ranges in AllowUsers and DenyUsers. Compression values
+other than
+.B no
+are rejected because the transport provides no compression. Banner is
+available as a global directive only and is rejected inside Match.
 Session processes are confined with Landlock: writes are allowed only under the user's home directory, /tmp, /var/tmp, /dev/shm, /dev, /proc, the session's runtime directory, and the configured chroot directory. The daemon refuses to start if the session sandbox is unavailable.

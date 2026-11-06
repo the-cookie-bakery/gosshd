@@ -165,6 +165,8 @@ Implemented checks include:
 - keyboard-interactive gated by `KbdInteractiveAuthentication`
 - password length cap, dummy-hash verification for unknown users, jittered failure delay, and a fixed per-IP failure limiter
 - `RequiredRSASize` (default 2048) for host, user, and certificate RSA keys
+- `CASignatureAlgorithms` enforcement for `TrustedUserCAKeys` and `cert-authority` user-certificate signatures
+- `Banner` delivery before authentication (global `Banner` only; rejected inside `Match`)
 
 ### Public-key authentication
 
@@ -181,9 +183,11 @@ The parser currently supports:
 
 - comments, blank lines, quoted arguments, and first-value-wins semantics
 - `Include` with glob expansion and recursion protection
-- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`, `AuthenticationMethods`, `Match`, and authorized-command execution
+- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`, `CASignatureAlgorithms`, `AuthenticationMethods`, `Match`, `Banner`, and authorized-command execution
+- full `MaxStartups start:rate:full` parsing and pre-authentication accounting
 - explicit rejection of unknown keywords
 - explicit rejection of directives that try to re-enable weak cryptography
+- explicit rejection of unsupported behavior-changing values: `UseDNS yes`, `Compression yes`, and `Compression delayed`
 - host-key permission validation (`-t`/startup); `-T` currently emits JSON rather than OpenSSH text
 
 Not yet implemented:
@@ -274,7 +278,7 @@ Status values are defined in [remaining-tasks.md](./remaining-tasks.md).
 | Phase | Scope | Implementation status | Unit verification | Smoke / E2E verification |
 | --- | --- | --- | --- | --- |
 | 1 | RFC references, module skeleton, repository layout | Done | Build succeeds | N/A |
-| 2 | Config parser, crypto policy, host-key loading | Done for core directives, including Match | `internal/config`, `internal/crypto` tests | Config exercised by smoke/auth/config suites |
+| 2 | Config parser, crypto policy, host-key loading | Done for core directives, including Match, Banner, CA signature policy, and full MaxStartups semantics | `internal/config`, `internal/crypto` tests | Config exercised by smoke/auth/config suites |
 | 3 | NSS/shadow/crypt authentication and access policy | Done for crypt-only path | `internal/auth` tests; crypt path exercised in container | Password login in smoke suite |
 | 4 | authorized_keys, key options, certificates | Partial | Authorized-key option tests | Public-key login in smoke suite; certificates not yet in E2E |
 | 5 | Privsep monitor/worker/session launcher | Partial | No dedicated unit tests yet | Password/key/PTY/SFTP sessions in smoke suite |
@@ -290,7 +294,7 @@ A v1 release is ready when:
 - all open tasks marked `P0` or `P1` in [remaining-tasks.md](./remaining-tasks.md) are complete
 - `go test ./...`, `go vet ./...`, `staticcheck`, and `govulncheck` pass
 - the full e2e matrix passes on Debian, Ubuntu, and Fedora
-- config compatibility tests cover Match, Include, first-value semantics, and weak-algorithm rejection
+- config compatibility tests cover Match, Include, first-value semantics, weak-algorithm rejection, and truthful handling of unsupported directives
 - auth tests cover password, public key, certificates, locked/expired accounts, and access controls
 - privsep tests verify worker isolation and monitor-side public-key verification
 - session tests cover PTY, exec, environment filtering, signals, exit status, chroot, and MaxSessions

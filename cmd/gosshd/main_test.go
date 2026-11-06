@@ -35,6 +35,16 @@ func TestReloadCompatible(t *testing.T) {
 	if err := reloadCompatible(old, next); err == nil {
 		t.Fatal("HostKey change was accepted")
 	}
+	next = old.Clone()
+	next.MaxStartupsRate = 99
+	if err := reloadCompatible(old, next); err == nil {
+		t.Fatal("MaxStartupsRate change was accepted")
+	}
+	next = old.Clone()
+	next.MaxStartupsFull = 200
+	if err := reloadCompatible(old, next); err == nil {
+		t.Fatal("MaxStartupsFull change was accepted")
+	}
 }
 
 func TestParseGrace(t *testing.T) {

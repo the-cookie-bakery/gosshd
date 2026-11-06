@@ -58,6 +58,26 @@ func TestWrongPasswordRejected(t *testing.T) {
 	sshdtest.MustRunAs(t, client, "id -un", u.Name)
 }
 
+func TestBannerDelivered(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	bannerPath := filepath.Join(t.TempDir(), "banner")
+	if err := os.WriteFile(bannerPath, []byte("gosshd test banner\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := startServer(t, u, "Banner "+bannerPath+"\n")
+	var got string
+	cfg := sshdtest.ClientConfig(u.Name, ssh.Password(u.Password))
+	cfg.BannerCallback = func(message string) error {
+		got = message
+		return nil
+	}
+	client := sshdtest.Dial(t, srv.Port, cfg)
+	defer client.Close()
+	if !strings.Contains(got, "gosshd test banner") {
+		t.Fatalf("banner=%q", got)
+	}
+}
+
 func TestLockedAccountRejected(t *testing.T) {
 	u := sshdtest.NewUser(t)
 	sshdtest.LockUser(t, u.Name)

@@ -295,3 +295,73 @@ func TestMatchAddressNegation(t *testing.T) {
 		t.Fatal("negated address should be excluded")
 	}
 }
+
+func TestMaxStartupsParsing(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("MaxStartups 10:30:100\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxStartups != 10 || cfg.MaxStartupsRate != 30 || cfg.MaxStartupsFull != 100 {
+		t.Fatalf("MaxStartups=%d:%d:%d", cfg.MaxStartups, cfg.MaxStartupsRate, cfg.MaxStartupsFull)
+	}
+
+	cfg, err = ParseReader(strings.NewReader("MaxStartups 5\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxStartups != 5 || cfg.MaxStartupsRate != DefaultMaxStartupsRate || cfg.MaxStartupsFull != DefaultMaxStartupsFull {
+		t.Fatalf("MaxStartups defaults=%d:%d:%d", cfg.MaxStartups, cfg.MaxStartupsRate, cfg.MaxStartupsFull)
+	}
+
+	for _, input := range []string{
+		"MaxStartups -1\n",
+		"MaxStartups 5:101:100\n",
+		"MaxStartups 20:30:10\n",
+		"MaxStartups 1:2:3:4\n",
+		"MaxStartups nope\n",
+	} {
+		if _, err := ParseReader(strings.NewReader(input), "test"); err == nil {
+			t.Fatalf("expected %q to be rejected", input)
+		}
+	}
+}
+
+func TestUseDNSAndCompressionTruthfulness(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("UseDNS no\nCompression no\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UseDNS {
+		t.Fatal("UseDNS should be false")
+	}
+	if cfg.Compression != "no" {
+		t.Fatalf("Compression=%q", cfg.Compression)
+	}
+	if _, err := ParseReader(strings.NewReader("UseDNS yes\n"), "test"); err == nil {
+		t.Fatal("expected UseDNS yes to be rejected")
+	}
+	for _, input := range []string{"Compression yes\n", "Compression delayed\n", "Compression maybe\n"} {
+		if _, err := ParseReader(strings.NewReader(input), "test"); err == nil {
+			t.Fatalf("expected %q to be rejected", strings.TrimSpace(input))
+		}
+	}
+}
+
+func TestCASignatureAlgorithmsParsing(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("CASignatureAlgorithms ssh-ed25519,rsa-sha2-512\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.CASignatureAlgorithms, ","); got != "ssh-ed25519,rsa-sha2-512" {
+		t.Fatalf("CASignatureAlgorithms=%q", got)
+	}
+}
+
+func TestMatchRejectsGlobalOnlyTruthfulnessDirectives(t *testing.T) {
+	for _, name := range []string{"Banner", "UseDNS", "Compression", "CASignatureAlgorithms"} {
+		input := "Match User alice\n    " + name + " value\n"
+		if _, err := ParseReader(strings.NewReader(input), "test"); err == nil {
+			t.Fatalf("expected %s inside Match to be rejected", name)
+		}
+	}
+}
