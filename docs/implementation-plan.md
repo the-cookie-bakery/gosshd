@@ -181,13 +181,12 @@ The parser currently supports:
 
 - comments, blank lines, quoted arguments, and first-value-wins semantics
 - `Include` with glob expansion and recursion protection
-- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`, `AuthenticationMethods`, and authorized-command execution
+- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`, `AuthenticationMethods`, `Match`, and authorized-command execution
 - explicit rejection of unknown keywords
 - explicit rejection of directives that try to re-enable weak cryptography
 
 Not yet implemented:
 
-- `Match` blocks and Match-scoped directives
 - complete OpenSSH directive semantics for every accepted keyword
 - full certificate option/extension parity
 
@@ -272,7 +271,7 @@ Status values are defined in [remaining-tasks.md](./remaining-tasks.md).
 | Phase | Scope | Implementation status | Unit verification | Smoke / E2E verification |
 | --- | --- | --- | --- | --- |
 | 1 | RFC references, module skeleton, repository layout | Done | Build succeeds | N/A |
-| 2 | Config parser, crypto policy, host-key loading | Done for core directives; Match pending | `internal/config`, `internal/crypto` tests | Config exercised by smoke suite |
+| 2 | Config parser, crypto policy, host-key loading | Done for core directives, including Match | `internal/config`, `internal/crypto` tests | Config exercised by smoke/auth/config suites |
 | 3 | NSS/shadow/crypt authentication and access policy | Done for crypt-only path | `internal/auth` tests; crypt path exercised in container | Password login in smoke suite |
 | 4 | authorized_keys, key options, certificates | Partial | Authorized-key option tests | Public-key login in smoke suite; certificates not yet in E2E |
 | 5 | Privsep monitor/worker/session launcher | Partial | No dedicated unit tests yet | Password/key/PTY/SFTP sessions in smoke suite |

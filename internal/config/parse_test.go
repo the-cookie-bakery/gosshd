@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -193,5 +194,104 @@ func TestAuthorizedCommandRequiresUser(t *testing.T) {
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected AuthorizedPrincipalsCommand without user to be rejected")
+	}
+}
+
+func TestMatchParsingAndResolution(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader(`
+PasswordAuthentication yes
+Match User alice,bob Group staff Address 192.0.2.0/24 LocalPort 22
+    ForceCommand "echo matched"
+    PermitTTY no
+Match All
+    MaxSessions 3
+`), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Matches) != 2 {
+		t.Fatalf("matches=%d", len(cfg.Matches))
+	}
+	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.5"), Port: 1234}
+	local := &net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 22}
+	resolved := cfg.Resolve("alice", []string{"staff"}, remote, local)
+	if resolved.ForceCommand != "echo matched" {
+		t.Fatalf("ForceCommand=%q", resolved.ForceCommand)
+	}
+	if resolved.PermitTTY {
+		t.Fatal("PermitTTY should be disabled by Match")
+	}
+	if resolved.MaxSessions != 3 {
+		t.Fatalf("MaxSessions=%d", resolved.MaxSessions)
+	}
+	other := cfg.Resolve("carol", []string{"other"}, remote, local)
+	if other.ForceCommand != "" {
+		t.Fatalf("unexpected ForceCommand=%q", other.ForceCommand)
+	}
+	if other.MaxSessions != 3 {
+		t.Fatalf("Match All MaxSessions=%d", other.MaxSessions)
+	}
+}
+
+func TestMatchGlobalPrecedence(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader(`
+ForceCommand "global"
+Match User alice
+    ForceCommand "matched"
+`), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := cfg.Resolve("alice", nil, nil, nil)
+	if resolved.ForceCommand != "global" {
+		t.Fatalf("ForceCommand=%q", resolved.ForceCommand)
+	}
+}
+
+func TestMatchFirstValueWithinBlock(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader(`
+Match User alice
+    ForceCommand "first"
+    ForceCommand "second"
+`), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := cfg.Resolve("alice", nil, nil, nil)
+	if resolved.ForceCommand != "first" {
+		t.Fatalf("ForceCommand=%q", resolved.ForceCommand)
+	}
+}
+
+func TestMatchRejectsUnsupportedDirective(t *testing.T) {
+	if _, err := ParseReader(strings.NewReader("Match User alice\nPort 2222\n"), "test"); err == nil {
+		t.Fatal("expected unsupported Match directive to be rejected")
+	}
+}
+
+func TestMatchRejectsInvalidCriteria(t *testing.T) {
+	for _, input := range []string{
+		"Match\n",
+		"Match alice\n",
+		"Match All User alice\n",
+		"Match LocalPort nope\n",
+	} {
+		if _, err := ParseReader(strings.NewReader(input), "test"); err == nil {
+			t.Fatalf("expected %q to be rejected", input)
+		}
+	}
+}
+
+func TestMatchAddressNegation(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("Match User alice Address *,!192.0.2.0/24\n    PermitTTY no\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := &net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 22}
+	if resolved := cfg.Resolve("alice", nil, &net.TCPAddr{IP: net.ParseIP("198.51.100.2")}, local); resolved.PermitTTY {
+		t.Fatal("address negated pattern did not match")
+	}
+	if resolved := cfg.Resolve("alice", nil, &net.TCPAddr{IP: net.ParseIP("192.0.2.5")}, local); !resolved.PermitTTY {
+		t.Fatal("negated address should be excluded")
 	}
 }

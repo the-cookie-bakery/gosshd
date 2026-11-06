@@ -74,7 +74,7 @@ func TestPasswordLengthLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Password("someone", make([]byte, maxPasswordLength+1), nil, nil); err != ErrInvalidLogin {
+	if _, err := a.Password("password", "someone", make([]byte, maxPasswordLength+1), nil, nil); err != ErrInvalidLogin {
 		t.Fatalf("got %v, want ErrInvalidLogin", err)
 	}
 }
@@ -153,7 +153,7 @@ func TestAuthorizedKeysCertAuthority(t *testing.T) {
 	}
 	u := &nss.User{Name: "test", Home: dir}
 	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.1")}
-	perms, err := a.lookupAuthorizedKey(u, cert, remote, nil)
+	perms, err := a.lookupAuthorizedKey(cfg, u, cert, remote, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestAuthorizedKeysCertAuthority(t *testing.T) {
 
 	cert.ValidPrincipals = []string{"other"}
 	bad := *cert
-	if _, err := a.lookupAuthorizedKey(u, &bad, remote, nil); err == nil {
+	if _, err := a.lookupAuthorizedKey(cfg, u, &bad, remote, nil); err == nil {
 		t.Fatal("expected mismatched principal to be rejected")
 	}
 }

@@ -12,14 +12,15 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cookiengineer/gosshd/internal/config"
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
 
-func (a *Authenticator) lookupAuthorizedCertAuthorities(u *nss.User, cert *ssh.Certificate, remote, local net.Addr) (*Permissions, bool, error) {
+func (a *Authenticator) lookupAuthorizedCertAuthorities(cfg *config.Config, u *nss.User, cert *ssh.Certificate, remote, local net.Addr) (*Permissions, bool, error) {
 	if cert.CertType != ssh.UserCert {
 		return nil, false, nil
 	}
-	for _, spec := range a.cfg.AuthorizedKeysFile {
+	for _, spec := range cfg.AuthorizedKeysFile {
 		if spec == "none" {
 			continue
 		}
@@ -30,7 +31,7 @@ func (a *Authenticator) lookupAuthorizedCertAuthorities(u *nss.User, cert *ssh.C
 		if !filepath.IsAbs(expanded) {
 			expanded = filepath.Join(u.Home, expanded)
 		}
-		if err := secureAuthorizedKeysFile(u, expanded, a.cfg.StrictModes); err != nil {
+		if err := secureAuthorizedKeysFile(u, expanded, cfg.StrictModes); err != nil {
 			continue
 		}
 		f, err := os.Open(expanded)
@@ -118,15 +119,15 @@ func scanCertAuthority(r io.Reader, cert *ssh.Certificate, u *nss.User, remote n
 	return nil, false, nil
 }
 
-func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, remote, local net.Addr) (*Permissions, error) {
+func (a *Authenticator) lookupCertificate(cfg *config.Config, u *nss.User, cert *ssh.Certificate, remote, local net.Addr) (*Permissions, error) {
 	if cert.CertType != ssh.UserCert {
 		return nil, ErrAccessDenied
 	}
-	authorities, err := loadAuthorities(a.cfg.TrustedUserCAKeys)
+	authorities, err := loadAuthorities(cfg.TrustedUserCAKeys)
 	if err != nil || len(authorities) == 0 {
 		return nil, ErrAccessDenied
 	}
-	revoked, _ := loadRevoked(a.cfg.RevokedKeys)
+	revoked, _ := loadRevoked(cfg.RevokedKeys)
 	checker := &ssh.CertChecker{
 		SupportedCriticalOptions: []string{"force-command", "source-address"},
 		IsUserAuthority: func(auth ssh.PublicKey) bool {
@@ -147,8 +148,8 @@ func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, re
 		},
 	}
 	principal := u.Name
-	if a.cfg.AuthorizedPrincipalsFile != "" {
-		allowed, err := readPrincipalsFile(a.cfg.AuthorizedPrincipalsFile)
+	if cfg.AuthorizedPrincipalsFile != "" {
+		allowed, err := readPrincipalsFile(cfg.AuthorizedPrincipalsFile)
 		if err != nil {
 			return nil, ErrAccessDenied
 		}

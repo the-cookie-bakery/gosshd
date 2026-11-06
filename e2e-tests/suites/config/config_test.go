@@ -118,3 +118,17 @@ func TestAuthorizedCommandValidation(t *testing.T) {
 		t.Fatalf("missing command path accepted: %s", out)
 	}
 }
+
+func TestMatchConfigAccepted(t *testing.T) {
+	bin := requireBin(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	valid := sshdtest.WriteFile(t, dir, "match.conf", fmt.Sprintf("HostKey %s\nMatch User alice\n    PermitTTY no\n    ForceCommand \"echo hi\"\n", hostPath))
+	if out, code := testConfig(t, bin, valid); code != 0 {
+		t.Fatalf("valid Match config rejected (%d): %s", code, out)
+	}
+	invalid := sshdtest.WriteFile(t, dir, "match_invalid.conf", fmt.Sprintf("HostKey %s\nMatch User alice\n    Port 2222\n", hostPath))
+	if out, code := testConfig(t, bin, invalid); code == 0 {
+		t.Fatalf("unsupported Match directive accepted: %s", out)
+	}
+}

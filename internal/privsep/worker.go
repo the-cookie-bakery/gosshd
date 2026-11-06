@@ -248,15 +248,15 @@ func (h *authHandler) callbacks(methods []string) ssh.ServerAuthCallbacks {
 	for _, method := range methods {
 		switch method {
 		case "password":
-			if h.cfg.PasswordAuthentication {
+			if h.cfg.PasswordAuthentication || len(h.cfg.Matches) > 0 {
 				callbacks.PasswordCallback = h.passwordCallback
 			}
 		case "keyboard-interactive":
-			if h.cfg.KbdInteractiveAuthentication {
+			if h.cfg.KbdInteractiveAuthentication || len(h.cfg.Matches) > 0 {
 				callbacks.KeyboardInteractiveCallback = h.keyboardCallback
 			}
 		case "publickey":
-			if h.cfg.PubkeyAuthentication {
+			if h.cfg.PubkeyAuthentication || len(h.cfg.Matches) > 0 {
 				callbacks.PublicKeyCallback = h.publicKeyQuery
 			}
 		}

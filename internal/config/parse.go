@@ -28,11 +28,13 @@ func (e *ParseError) Error() string {
 }
 
 type parser struct {
-	cfg      *Config
-	seen     map[string]bool
-	baseDir  string
-	depth    int
-	included map[string]bool
+	cfg       *Config
+	seen      map[string]bool
+	match     *MatchBlock
+	matchSeen map[string]bool
+	baseDir   string
+	depth     int
+	included  map[string]bool
 }
 
 func ParseFile(path string) (*Config, error) {
@@ -54,6 +56,9 @@ func ParseReader(r io.Reader, name string) (*Config, error) {
 }
 
 func ParseOption(cfg *Config, option string) error {
+	if cfg.explicit == nil {
+		cfg.explicit = map[string]bool{}
+	}
 	p := &parser{cfg: cfg, seen: map[string]bool{}, included: map[string]bool{}}
 	fields, err := splitFields(option)
 	if err != nil {
@@ -126,9 +131,21 @@ func (p *parser) parseReader(r io.Reader, name string) error {
 			continue
 		}
 		if key == "match" {
-			return &ParseError{Path: name, Line: lineNo, Message: "Match blocks are not implemented yet"}
+			block, err := parseMatchCriteria(fields[1:])
+			if err != nil {
+				return &ParseError{Path: name, Line: lineNo, Message: err.Error()}
+			}
+			p.cfg.Matches = append(p.cfg.Matches, block)
+			p.match = &p.cfg.Matches[len(p.cfg.Matches)-1]
+			p.matchSeen = map[string]bool{}
+			continue
 		}
-		if err := p.apply(fields[0], fields[1:], name); err != nil {
+		if p.match != nil {
+			err = setMatchDirective(p.match, p.matchSeen, fields[0], fields[1:])
+		} else {
+			err = p.apply(fields[0], fields[1:], name)
+		}
+		if err != nil {
 			return &ParseError{Path: name, Line: lineNo, Message: err.Error()}
 		}
 	}
@@ -612,6 +629,10 @@ func (p *parser) apply(key string, args []string, source string) error {
 	default:
 		return fmt.Errorf("unsupported configuration keyword %q", key)
 	}
+	if p.cfg.explicit == nil {
+		p.cfg.explicit = map[string]bool{}
+	}
+	p.cfg.explicit[k] = true
 	return nil
 }
 

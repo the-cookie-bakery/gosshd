@@ -16,21 +16,22 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cookiengineer/gosshd/internal/config"
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
 
-func (a *Authenticator) lookupAuthorizedKey(u *nss.User, key ssh.PublicKey, remote, local net.Addr) (*Permissions, error) {
+func (a *Authenticator) lookupAuthorizedKey(cfg *config.Config, u *nss.User, key ssh.PublicKey, remote, local net.Addr) (*Permissions, error) {
 	if cert, ok := key.(*ssh.Certificate); ok {
-		perms, found, err := a.lookupAuthorizedCertAuthorities(u, cert, remote, local)
+		perms, found, err := a.lookupAuthorizedCertAuthorities(cfg, u, cert, remote, local)
 		if err != nil {
 			return nil, err
 		}
 		if found {
 			return perms, nil
 		}
-		return a.lookupCertificate(u, cert, remote, local)
+		return a.lookupCertificate(cfg, u, cert, remote, local)
 	}
-	for _, spec := range a.cfg.AuthorizedKeysFile {
+	for _, spec := range cfg.AuthorizedKeysFile {
 		if spec == "none" {
 			continue
 		}
@@ -41,7 +42,7 @@ func (a *Authenticator) lookupAuthorizedKey(u *nss.User, key ssh.PublicKey, remo
 		if !filepath.IsAbs(expanded) {
 			expanded = filepath.Join(u.Home, expanded)
 		}
-		if err := secureAuthorizedKeysFile(u, expanded, a.cfg.StrictModes); err != nil {
+		if err := secureAuthorizedKeysFile(u, expanded, cfg.StrictModes); err != nil {
 			continue
 		}
 		f, err := os.Open(expanded)

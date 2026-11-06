@@ -81,8 +81,9 @@ type sessionState struct {
 	closed   bool
 	mu       sync.Mutex
 
-	remote net.Addr
-	local  net.Addr
+	remote   net.Addr
+	local    net.Addr
+	resolved *config.Config
 
 	authMu   sync.Mutex
 	authDone []string
@@ -102,6 +103,18 @@ func (st *sessionState) getPerms() *auth.Permissions {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.perms
+}
+
+func (st *sessionState) setResolved(cfg *config.Config) {
+	st.mu.Lock()
+	st.resolved = cfg
+	st.mu.Unlock()
+}
+
+func (st *sessionState) getResolved() *config.Config {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.resolved
 }
 
 func (st *sessionState) getSession(id string) *session {
@@ -383,18 +396,12 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if p.Type == "keyboard" {
 			method = "keyboard-interactive"
 		}
-		if method == "password" && !m.cfg.PasswordAuthentication {
-			return &Result{Error: "password authentication disabled"}
-		}
-		if method == "keyboard-interactive" && !m.cfg.KbdInteractiveAuthentication {
-			return &Result{Error: "keyboard-interactive authentication disabled"}
-		}
 		host := remoteHost(addrString(st.remote))
 		if delay := m.limiter.delay(host); delay > 0 {
 			time.Sleep(delay)
 		}
 		st.authMu.Lock()
-		perms, err := m.auth.Password(p.User, p.Password, st.remote, st.local)
+		perms, err := m.auth.Password(method, p.User, p.Password, st.remote, st.local)
 		for i := range p.Password {
 			p.Password[i] = 0
 		}
@@ -414,13 +421,11 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		m.limiter.success(host)
 		if final {
 			st.setPerms(perms)
+			st.setResolved(m.cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
 			return &Result{OK: true, Permissions: perms}
 		}
 		return &Result{OK: true, Partial: true, NextMethods: next}
 	case "pubkey_authorize":
-		if !m.cfg.PubkeyAuthentication {
-			return &Result{Error: "public key authentication disabled"}
-		}
 		key, err := ssh.ParsePublicKey(p.Key)
 		if err != nil {
 			return &Result{Error: "invalid public key"}
@@ -431,9 +436,6 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		}
 		return &Result{OK: true, Permissions: perms}
 	case "pubkey_verified":
-		if !m.cfg.PubkeyAuthentication {
-			return &Result{Error: "public key authentication disabled"}
-		}
 		key, err := ssh.ParsePublicKey(p.Key)
 		if err != nil {
 			return &Result{Error: "invalid public key"}
@@ -451,6 +453,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		}
 		if final {
 			st.setPerms(perms)
+			st.setResolved(m.cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
 			return &Result{OK: true, Permissions: perms}
 		}
 		return &Result{OK: true, Partial: true, NextMethods: next}
@@ -524,34 +527,38 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 
 func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Packet) (string, error) {
 	log.Printf("monitor open session user=%q pty=%v command=%q subsystem=%q", perms.Username, p.Pty, p.Command, p.Subsystem)
-	if p.Pty && (!m.cfg.PermitTTY || perms.NoPTY) {
+	cfg := st.getResolved()
+	if cfg == nil {
+		cfg = m.cfg
+	}
+	if p.Pty && (!cfg.PermitTTY || perms.NoPTY) {
 		return "", errors.New("pty not permitted")
 	}
 	command := p.Command
 	subsystem := p.Subsystem
-	if m.cfg.ForceCommand != "" {
-		command = m.cfg.ForceCommand
+	if cfg.ForceCommand != "" {
+		command = cfg.ForceCommand
 		subsystem = ""
 	} else if perms.ForceCommand != "" {
 		command = perms.ForceCommand
 		subsystem = ""
 	}
 	if subsystem != "" {
-		if _, ok := m.cfg.Subsystems[subsystem]; !ok {
+		if _, ok := cfg.Subsystems[subsystem]; !ok {
 			return "", errors.New("unknown subsystem")
 		}
 	}
-	chroot, err := resolveChroot(m.cfg.ChrootDirectory, perms)
+	chroot, err := resolveChroot(cfg.ChrootDirectory, perms)
 	if err != nil {
 		return "", err
 	}
-	env := m.buildEnv(p.Env, perms)
+	env := m.buildEnv(cfg, p.Env, perms)
 	spec := SessionSpec{
 		UID: perms.UID, GID: perms.GID, Groups: nil,
 		Home: perms.Home, Shell: perms.Shell,
-		Command: command, Subsystem: subsystem, SubsystemCommand: m.cfg.Subsystems[subsystem],
+		Command: command, Subsystem: subsystem, SubsystemCommand: cfg.Subsystems[subsystem],
 		Chroot: chroot, Env: env,
-		Remote: addrString(st.remote), NoUserRC: perms.NoUserRC || !m.cfg.PermitUserRC,
+		Remote: addrString(st.remote), NoUserRC: perms.NoUserRC || !cfg.PermitUserRC,
 		Pty: p.Pty,
 	}
 	for _, g := range perms.Groups {
@@ -639,7 +646,7 @@ func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Pack
 		s.mu.Unlock()
 		close(s.done)
 	}()
-	if err := st.addSessionIfRoom(s, m.cfg.MaxSessions); err != nil {
+	if err := st.addSessionIfRoom(s, cfg.MaxSessions); err != nil {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		_ = cmd.Process.Kill()
 		closeFiles(workerFiles...)
@@ -660,7 +667,7 @@ func closeFiles(files ...*os.File) {
 	}
 }
 
-func (m *Monitor) buildEnv(clientEnv []string, perms *auth.Permissions) []string {
+func (m *Monitor) buildEnv(cfg *config.Config, clientEnv []string, perms *auth.Permissions) []string {
 	env := []string{
 		"HOME=" + perms.Home,
 		"USER=" + perms.Username,
@@ -668,11 +675,11 @@ func (m *Monitor) buildEnv(clientEnv []string, perms *auth.Permissions) []string
 		"SHELL=" + perms.Shell,
 		"PATH=/usr/local/bin:/usr/bin:/bin",
 	}
-	for k, v := range m.cfg.SetEnv {
+	for k, v := range cfg.SetEnv {
 		env = append(env, k+"="+v)
 	}
 	for _, kv := range perms.Environment {
-		if strings.Contains(kv, "=") && m.cfg.PermitUserEnvironment == "yes" {
+		if strings.Contains(kv, "=") && cfg.PermitUserEnvironment == "yes" {
 			env = append(env, kv)
 		}
 	}
@@ -681,7 +688,7 @@ func (m *Monitor) buildEnv(clientEnv []string, perms *auth.Permissions) []string
 		if !ok || k == "" || strings.ContainsAny(k, "\x00=") {
 			continue
 		}
-		if k == "TERM" || matchAny(m.cfg.AcceptEnv, k) {
+		if k == "TERM" || matchAny(cfg.AcceptEnv, k) {
 			env = append(env, kv)
 		}
 	}

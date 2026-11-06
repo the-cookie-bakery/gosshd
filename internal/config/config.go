@@ -76,6 +76,9 @@ type Config struct {
 	AllowGroups           []string
 	DenyGroups            []string
 
+	Matches  []MatchBlock
+	explicit map[string]bool
+
 	UsePAM bool
 }
 
@@ -105,6 +108,7 @@ func Default() *Config {
 		RequiredRSASize:              2048,
 		ClientAliveCountMax:          3,
 		TCPKeepAlive:                 true,
+		explicit:                     map[string]bool{},
 	}
 }
 
@@ -138,6 +142,14 @@ func (c *Config) Clone() *Config {
 	d.Subsystems = make(map[string]string, len(c.Subsystems))
 	for k, v := range c.Subsystems {
 		d.Subsystems[k] = v
+	}
+	d.Matches = make([]MatchBlock, len(c.Matches))
+	for i := range c.Matches {
+		d.Matches[i] = c.Matches[i].clone()
+	}
+	d.explicit = make(map[string]bool, len(c.explicit))
+	for k, v := range c.explicit {
+		d.explicit[k] = v
 	}
 	return &d
 }

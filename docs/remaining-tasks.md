@@ -41,13 +41,13 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | --- | --- | --- | --- | --- |
 | CFG-01 | Core `sshd_config` parser: comments, quotes, first-value semantics, common directives, unknown-keyword rejection | Done | `TestParseBasic`, `TestFirstValueWins`, `TestQuotesAndComments`, `TestUnknownKeyword`, `TestParseOption` | Smoke configs use `Port`, `ListenAddress`, `HostKey`, auth, `AuthorizedKeysFile`, and `Subsystem` |
 | CFG-02 | `Include` directive with glob expansion and recursion protection | Done | Parser tests cover basic parsing; no dedicated Include test | Not covered |
-| CFG-03 | `Match` blocks for User, Group, Address, LocalAddress, LocalPort, All; Match-scoped directives | Pending | No tests | Not covered; parser currently rejects Match |
+| CFG-03 | `Match` blocks for User, Group, Address, LocalAddress, LocalPort, All; Match-scoped directives | Done | Parser and `Config.Resolve` tests cover criteria, negation, global precedence, first-value-wins, and supported directives | `auth` suite covers Match User/Address auth and session policy |
 | CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Done | Root-owned absolute command validation, argv/token expansion, privilege drop, timeout/output limits, and reader-based key parsing; unit tests | `auth` suite logs in via command-provided keys |
 | CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Done | Command execution and principal parsing share the validated command path; unit tests | `cert` suite logs in via command-provided principals |
 | CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Done | Parsed alternatives, startup validation, per-connection auth-progress state machine, and `PartialSuccessError` callbacks; unit tests cover completion/partial/wrong-order cases | `auth` suite covers publickey+password success, single-factor failure, and wrong second factor |
 | CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*` and `TCPKeepAlive` are applied; compression, DNS, and forwarding options remain acknowledged only | `interop` exercises client-alive and TCP keepalive paths |
 | CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` and `-T` manually verified | Smoke suite starts daemon with generated config; no negative config E2E |
-| CFG-09 | Match/Include E2E fixtures | Pending | None | Needed |
+| CFG-09 | Match/Include E2E fixtures | Done | `config`, `auth`, and existing Include fixtures | Passing |
 
 ### 3.2 Cryptography and host keys
 
@@ -126,7 +126,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | E2E-04 | Smoke suite: password auth, key auth, exec, PTY, internal SFTP | Done | N/A | Passing on Debian, Ubuntu, Fedora |
 | E2E-05 | Authentication negative matrix: wrong password, locked/expired, denied users/groups, bad key options | Done | New `auth` suite | Passing |
 | E2E-06 | Certificate E2E: host cert, user cert, principals, revocation, certificate key options | Done | New `cert` suite | Passing |
-| E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Partial | `config` suite covers Include/recursion, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, and `-T` | Match still pending |
+| E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Done | `config` suite covers Include/recursion, Match, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, and `-T` | Passing |
 | E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Done | `privsep` suite asserts uid separation, monitor capability reduction, empty worker capabilities, and `setpriv` access denial for shadow/host keys | Passing |
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Done | New `interop` suite | `ssh`, `scp`, and `sftp` pass |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Done | `interop` suite rejects direct-tcpip, remote forward, agent, and X11 requests | Passing |
@@ -177,8 +177,7 @@ The following areas are implemented and have at least smoke or unit verification
 
 ### Milestone B: configuration compatibility
 
-1. Implement Match parsing and evaluation.
-2. Add config E2E fixtures for Include, Match, weak algorithms, and unsupported directives.
+1. Add config E2E fixtures for Include, weak algorithms, and unsupported directives.
 
 ### Milestone C: operational readiness
 

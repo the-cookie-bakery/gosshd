@@ -78,30 +78,43 @@ func (a *Authenticator) Config() *config.Config {
 	return a.cfg
 }
 
-func (a *Authenticator) Lookup(username string, remote net.Addr) (*nss.User, error) {
+func (a *Authenticator) Resolve(username string, remote, local net.Addr) (*nss.User, *config.Config, error) {
 	u, err := nss.LookupUser(username)
 	if err != nil {
-		return nil, ErrInvalidLogin
+		return nil, nil, ErrInvalidLogin
 	}
 	if u.Shell == "" {
 		u.Shell = "/bin/sh"
 	}
-	if err := a.checkAccess(u, remote); err != nil {
-		return nil, err
+	resolved := a.cfg.Resolve(u.Name, u.Groups, remote, local)
+	if err := a.checkAccess(resolved, u, remote); err != nil {
+		return nil, nil, err
 	}
-	return u, nil
+	return u, resolved, nil
 }
 
-func (a *Authenticator) Password(username string, password []byte, remote, local net.Addr) (*Permissions, error) {
+func (a *Authenticator) Password(method, username string, password []byte, remote, local net.Addr) (*Permissions, error) {
 	if len(password) > maxPasswordLength {
 		return nil, ErrInvalidLogin
 	}
-	u, err := a.Lookup(username, remote)
+	u, cfg, err := a.Resolve(username, remote, local)
 	if err != nil {
 		a.dummyVerify(password)
 		return nil, err
 	}
-	if err := a.checkRootLogin(u, "password", false); err != nil {
+	switch method {
+	case "password":
+		if !cfg.PasswordAuthentication {
+			return nil, ErrAccessDenied
+		}
+	case "keyboard-interactive":
+		if !cfg.KbdInteractiveAuthentication {
+			return nil, ErrAccessDenied
+		}
+	default:
+		return nil, ErrAccessDenied
+	}
+	if err := a.checkRootLogin(cfg, u, "password", false); err != nil {
 		return nil, err
 	}
 	if err := a.checkNologin(u); err != nil {
@@ -127,7 +140,7 @@ func (a *Authenticator) Password(username string, password []byte, remote, local
 		return nil, ErrAccountLocked
 	}
 	if hash == "" {
-		if !a.cfg.PermitEmptyPasswords || len(password) != 0 {
+		if !cfg.PermitEmptyPasswords || len(password) != 0 {
 			return nil, ErrInvalidLogin
 		}
 	} else {
@@ -151,21 +164,21 @@ func (a *Authenticator) Password(username string, password []byte, remote, local
 }
 
 func (a *Authenticator) PublicKey(username string, key ssh.PublicKey, remote, local net.Addr) (*Permissions, error) {
-	u, err := a.Lookup(username, remote)
+	u, cfg, err := a.Resolve(username, remote, local)
 	if err != nil {
 		return nil, err
 	}
-	if !a.cfg.PubkeyAuthentication {
+	if !cfg.PubkeyAuthentication {
 		return nil, ErrAccessDenied
 	}
-	if err := checkRSASize(key, a.cfg.RequiredRSASize); err != nil {
+	if err := checkRSASize(key, cfg.RequiredRSASize); err != nil {
 		return nil, err
 	}
-	p, err := a.lookupAuthorizedKey(u, key, remote, local)
+	p, err := a.lookupAuthorizedKey(cfg, u, key, remote, local)
 	if err != nil {
 		return nil, err
 	}
-	if err := a.checkRootLogin(u, "publickey", p.ForceCommand != ""); err != nil {
+	if err := a.checkRootLogin(cfg, u, "publickey", p.ForceCommand != ""); err != nil {
 		return nil, err
 	}
 	if err := a.checkNologin(u); err != nil {
@@ -209,11 +222,11 @@ func checkRSASize(key ssh.PublicKey, minimum int) error {
 	return nil
 }
 
-func (a *Authenticator) checkRootLogin(u *nss.User, method string, forced bool) error {
+func (a *Authenticator) checkRootLogin(cfg *config.Config, u *nss.User, method string, forced bool) error {
 	if u.UID != 0 {
 		return nil
 	}
-	switch strings.ToLower(a.cfg.PermitRootLogin) {
+	switch strings.ToLower(cfg.PermitRootLogin) {
 	case "no":
 		return ErrAccessDenied
 	case "yes":
@@ -242,30 +255,30 @@ func (a *Authenticator) checkNologin(u *nss.User) error {
 	return nil
 }
 
-func (a *Authenticator) checkAccess(u *nss.User, remote net.Addr) error {
-	for _, pat := range a.cfg.DenyUsers {
+func (a *Authenticator) checkAccess(cfg *config.Config, u *nss.User, remote net.Addr) error {
+	for _, pat := range cfg.DenyUsers {
 		if matchUserHost(pat, u.Name, remote) {
 			return ErrAccessDenied
 		}
 	}
-	for _, pat := range a.cfg.AllowUsers {
+	for _, pat := range cfg.AllowUsers {
 		if matchUserHost(pat, u.Name, remote) {
 			goto groups
 		}
 	}
-	if len(a.cfg.AllowUsers) > 0 {
+	if len(cfg.AllowUsers) > 0 {
 		return ErrAccessDenied
 	}
 groups:
-	for _, pat := range a.cfg.DenyGroups {
+	for _, pat := range cfg.DenyGroups {
 		for _, g := range u.Groups {
 			if matchGlob(pat, g) {
 				return ErrAccessDenied
 			}
 		}
 	}
-	if len(a.cfg.AllowGroups) > 0 {
-		for _, pat := range a.cfg.AllowGroups {
+	if len(cfg.AllowGroups) > 0 {
+		for _, pat := range cfg.AllowGroups {
 			for _, g := range u.Groups {
 				if matchGlob(pat, g) {
 					return nil

@@ -1,9 +1,11 @@
 package privsep
 
 import (
+	"os/user"
 	"testing"
 	"time"
 
+	"github.com/cookiengineer/gosshd/internal/auth"
 	"github.com/cookiengineer/gosshd/internal/config"
 )
 
@@ -24,14 +26,22 @@ func TestForgedSessionRequestsRejected(t *testing.T) {
 }
 
 func TestDisabledAuthMethodsRejected(t *testing.T) {
+	current, err := user.Current()
+	if err != nil {
+		t.Skipf("current user unavailable: %v", err)
+	}
 	cfg := config.Default()
 	cfg.PasswordAuthentication = false
 	cfg.KbdInteractiveAuthentication = false
-	m := &Monitor{cfg: cfg, limiter: newAuthLimiter()}
+	a, err := auth.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Monitor{cfg: cfg, auth: a, limiter: newAuthLimiter()}
 	st := newSessionState()
 	for _, pkt := range []*Packet{
-		{Type: "password", User: "alice"},
-		{Type: "keyboard", User: "alice"},
+		{Type: "password", User: current.Username},
+		{Type: "keyboard", User: current.Username},
 	} {
 		res := m.handlePacket(st, pkt)
 		if res == nil || res.OK {

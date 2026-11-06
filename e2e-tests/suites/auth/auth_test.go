@@ -259,3 +259,58 @@ func TestAuthorizedKeysCommand(t *testing.T) {
 		t.Fatal("key not returned by command was accepted")
 	}
 }
+
+func TestMatchUserPasswordDisabled(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	srv := startServer(t, u, "Match User "+u.Name+"\n    PasswordAuthentication no\n")
+
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.Password(u.Password)))
+	if err == nil {
+		c.Close()
+		t.Fatal("password authentication was accepted despite Match disable")
+	}
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	defer client.Close()
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+}
+
+func TestMatchAddressPasswordDisabled(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	srv := startServer(t, u, "Match Address 127.0.0.0/8\n    PasswordAuthentication no\n")
+
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.Password(u.Password)))
+	if err == nil {
+		c.Close()
+		t.Fatal("password authentication was accepted despite Match Address disable")
+	}
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	defer client.Close()
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+}
+
+func TestMatchForceCommandAndNoPTY(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	srv := startServer(t, u, "Match User "+u.Name+"\n    ForceCommand \"echo matched-command\"\n    PermitTTY no\n")
+
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	defer client.Close()
+	sshdtest.MustRun(t, client, "id", "matched-command")
+
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if err := session.RequestPty("xterm", 24, 80, ssh.TerminalModes{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Start("id"); err == nil {
+		t.Fatal("PTY session started despite Match PermitTTY no")
+	}
+}
