@@ -4,7 +4,6 @@ go 1.27.1
 
 require (
 	github.com/creack/pty v1.1.24
-	github.com/ebitengine/purego v0.11.3
 	github.com/go-crypt/crypt v0.14.15
 	github.com/pkg/sftp v1.13.12
 	golang.org/x/crypto v0.58.0

@@ -161,6 +161,10 @@ func run(args []string) int {
 		_ = os.WriteFile(cfg.PidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
 		defer os.Remove(cfg.PidFile)
 	}
+	if err := privsep.DropMonitorCapabilities(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	for _, addr := range monitor.Addrs() {
 		log.Printf("listening on %s", addr)
 	}

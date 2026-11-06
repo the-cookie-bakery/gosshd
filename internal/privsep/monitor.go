@@ -285,6 +285,11 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	}
 	defer pc.Close()
 	st := newSessionState()
+	m.serveControl(pc, st)
+	cmd.Wait()
+}
+
+func (m *Monitor) serveControl(pc *PacketConn, st *sessionState) {
 	var handlers sync.WaitGroup
 	for {
 		pkt, fds, err := pc.Read()
@@ -305,7 +310,6 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	pc.Close()
 	handlers.Wait()
 	shutdownSessions(st)
-	cmd.Wait()
 }
 
 func (m *Monitor) handleAndRespond(st *sessionState, pc *PacketConn, pkt *Packet) {

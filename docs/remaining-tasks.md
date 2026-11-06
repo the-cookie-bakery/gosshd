@@ -64,8 +64,8 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 
 | ID | Task | Implementation status | Unit test / verification | Smoke test / E2E test |
 | --- | --- | --- | --- | --- |
-| AUTH-01 | NSS-aware account lookup through libc `getpwnam` with file fallback | Done | `user.Lookup` fallback and container verification | Password/key sessions as real container users |
-| AUTH-02 | NSS-aware shadow lookup through libc `getspnam` with file fallback | Done | Container verification | Password login in smoke suite |
+| AUTH-01 | NSS-aware account lookup through `getent passwd` with a short cache and file fallback | Done | Parser and cache tests; container verification | Password/key sessions as real container users |
+| AUTH-02 | NSS-aware shadow lookup through `getent shadow` with a short cache and file fallback | Done | Parser and cache tests; container verification | Password login in smoke suite |
 | AUTH-03 | Password hash verification: yescrypt, SHA-512 crypt, SHA-256 crypt, bcrypt | Done | `go-crypt` decoder path; no dedicated vector table yet | Password login in smoke suite; hash variants need E2E cases |
 | AUTH-04 | Reject locked, expired, inactive, missing, and weak-hash accounts | Done | Account checks implemented; auth suite covers locked, expired, unknown, and wrong-password cases | `auth` suite covers locked, expired, and unknown accounts |
 | AUTH-05 | `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups`, `PermitRootLogin`, `/etc/nologin` | Partial | `TestMatchUserHost` covers pattern matching; allow/deny user E2E added | `auth` suite covers AllowUsers/DenyUsers; groups, PermitRootLogin, and `/etc/nologin` still uncovered |
@@ -88,10 +88,10 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 | PRIV-02 | Host private keys stay in monitor; host-key signing over RPC | Done | No dedicated unit test | Host-key handshake succeeds in smoke suite |
 | PRIV-03 | Session launcher drops uid/gid/groups, applies `no_new_privs`, limits, env, chroot | Partial | No dedicated unit test | Password/key/PTY/SFTP sessions in smoke suite |
 | PRIV-04 | Monitor-side verification of public-key userauth signatures | Done | `VerifiedPublicKeyCallback` re-confirms authorization after signature proof; no vendored patch | Covered indirectly by key and certificate suites |
-| PRIV-05 | Drop monitor capabilities after startup | Pending | Not implemented | Not covered |
+| PRIV-05 | Drop monitor capabilities after startup | Done | `internal/privsep/caps.go` drops the bounding set and effective/permitted set across all Go threads; fail-closed when root | `privsep` suite asserts monitor `CapEff`/`CapBnd` and per-thread consistency |
 | PRIV-06 | Worker and session sandboxing (seccomp/Landlock) | Pending | Not implemented | Not covered |
 | PRIV-07 | Bounded RPC protocol hardening and malformed-message handling | Partial | Length-limited framing and fd passing are implemented; no fuzz test | Not covered |
-| PRIV-08 | Forged worker RPC tests: cannot impersonate another user or open unauthorized sessions | Partial | `TestForgedSessionRequestsRejected` covers unauthenticated/unknown-session RPCs; no socket-level forgery harness | Worker uid separation covered by `privsep` suite |
+| PRIV-08 | Forged worker RPC tests: cannot impersonate another user or open unauthorized sessions | Done | Socket-level tests cover unauthenticated `session_open`, unknown-session operations, malformed payloads, and per-connection state isolation | Worker isolation and capability assertions covered by `privsep` suite |
 | PRIV-09 | Chroot path ownership and component validation | Done | `resolveChroot` expands tokens and rejects relative, missing, symlinked, non-root, or writable components; `chroot_test.go` | Not covered; unit tests cover validation |
 | PRIV-10 | Process cleanup and session reaping under disconnect/timeout | Partial | Basic cleanup implemented | Not covered |
 | PRIV-11 | Concurrent RPC dispatch without head-of-line blocking | Done | `handleConn` dispatches packets on goroutines, session state is mutex-guarded, cleanup drains handlers; race tests pass | Concurrent-session and signal smoke regressions added |
@@ -127,7 +127,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 | E2E-05 | Authentication negative matrix: wrong password, locked/expired, denied users/groups, bad key options | Done | New `auth` suite | Passing |
 | E2E-06 | Certificate E2E: host cert, user cert, principals, revocation, certificate key options | Done | New `cert` suite | Passing |
 | E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Partial | New `config` suite covers Include/recursion, weak algorithms, unknown keywords, AuthenticationMethods rejection, and `-T` | Match still pending |
-| E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Partial | New `privsep` suite asserts worker and session uid separation; forged RPC unit tests added | Shadow/host-key access denial and socket-level forgery still pending |
+| E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Done | `privsep` suite asserts uid separation, monitor capability reduction, empty worker capabilities, and `setpriv` access denial for shadow/host keys | Passing |
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Pending | None | Needed |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Pending | None | Needed |
 | E2E-11 | CI workflow running unit tests, vet, and the Podman matrix | Partial | `make ci` runs build, unit, vet, race, staticcheck, and govulncheck; no hosted workflow | Podman matrix remains manual |
@@ -144,7 +144,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 | OPS-05 | Syslog/journald integration and log levels | Partial | Uses standard logger; parsed `LogLevel` not fully applied | Not covered |
 | OPS-06 | PID file lifecycle | Done | Manual code inspection | Not covered |
 | OPS-07 | Man page and example configuration | Pending | README exists | Not covered |
-| OPS-08 | Threat model and security review document | Pending | Not written | Not covered |
+| OPS-08 | Threat model and security review document | Done | `docs/threat-model.md` covers assets, trust boundaries, attacker models, controls, residual risks, and non-goals | N/A |
 | DOC-01 | Implementation plan document | Done | `docs/implementation-plan.md` | N/A |
 | DOC-02 | Remaining task and verification tracker | Done | This document | N/A |
 

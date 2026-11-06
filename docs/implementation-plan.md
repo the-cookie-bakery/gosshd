@@ -6,7 +6,7 @@ Last updated: 2026-11-06
 
 gosshd is a Linux SSH server built on `golang.org/x/crypto/ssh`. The project targets a small feature surface, a modern cryptographic baseline, and compatibility with the parts of the standard OpenSSH configuration and authentication model needed for a practical SSHd replacement.
 
-The detailed task register, including implementation status and verification state, lives in [remaining-tasks.md](./remaining-tasks.md).
+The detailed task register, including implementation status and verification state, lives in [remaining-tasks.md](./remaining-tasks.md). The security assumptions, trust boundaries, and residual risks are documented in [threat-model.md](./threat-model.md).
 
 ## 2. Scope decisions
 
@@ -15,7 +15,7 @@ The detailed task register, including implementation status and verification sta
 | Operating system | Linux only for v1, with OS-specific code isolated for later ports |
 | Go version | Go 1.27+ |
 | Build mode | `CGO_ENABLED=0` |
-| Password auth | crypt-only in v1: NSS-aware shadow lookup plus pure-Go yescrypt/SHA-crypt/bcrypt verification |
+| Password auth | crypt-only in v1: NSS-aware shadow lookup through `getent` plus pure-Go yescrypt/SHA-crypt/bcrypt verification |
 | PAM | Not in v1; a password-backend interface is present so PAM can be added later |
 | Public-key auth | OpenSSH `authorized_keys`, key options, user certificates, host certificates |
 | SFTP | In-process `internal-sftp` plus configured external subsystems |
@@ -139,8 +139,8 @@ Rejected: `ssh-rsa` with SHA-1, `ssh-dss`, and disallowed RSA key sizes. RFC 870
 
 ### Password verification
 
-1. Resolve the account through libc `getpwnam` (NSS-aware) with a file fallback.
-2. Resolve the shadow entry through libc `getspnam` with a file fallback.
+1. Resolve the account through `getent passwd` (NSS-aware) with a short cache and a file fallback.
+2. Resolve the shadow entry through `getent shadow` (NSS-aware) with a short cache and a file fallback.
 3. Reject locked, expired, inactive, or missing accounts.
 4. Verify supported hashes:
    - yescrypt (`$y$`)
@@ -226,15 +226,13 @@ Implemented:
 - worker drops to the `nobody` account when the monitor runs as root
 - session launcher drops to the target uid/gid and supplementary groups
 - session launcher applies `no_new_privs`, resource limits, umask, chroot, environment, and exec
+- the monitor drops unnecessary capabilities across all runtime threads after startup (fail-closed)
 - host private keys are not loaded by workers
 - worker RPC protocol bounds message size and uses fd passing
 
 Remaining hardening:
 
-- drop monitor capabilities after startup
 - add worker/session seccomp or Landlock profiles
-- extend forged-RPC coverage to a socket-level harness
-- add shadow/host-key access-denial assertions to the privsep suite
 - add fuzzing for RPC, config, authorized_keys, certificates, and SFTP
 
 ## 9. End-to-end test harness

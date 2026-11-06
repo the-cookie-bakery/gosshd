@@ -8,7 +8,7 @@ This is an early implementation. The current tree includes:
 
 - `sshd_config` parsing for the core authentication, session, crypto, and access-control directives
 - explicit modern KEX/cipher/MAC/host-key policy with weak algorithm rejection
-- NSS-aware account lookup and shadow password verification using pure-Go yescrypt/SHA-crypt/bcrypt
+- NSS-aware account/shadow lookup through `getent` with a file fallback, plus pure-Go yescrypt/SHA-crypt/bcrypt verification
 - `authorized_keys` parsing with key options and `cert-authority` entries
 - OpenSSH user/host certificate support
 - rate limiting, failure delay, and `RequiredRSASize` enforcement
@@ -29,6 +29,7 @@ Still to complete:
 ## Documentation
 
 - [Implementation plan](docs/implementation-plan.md)
+- [Threat model](docs/threat-model.md)
 - [Remaining tasks and verification tracker](docs/remaining-tasks.md)
 
 ## Build
