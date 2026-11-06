@@ -19,8 +19,9 @@ This is an early implementation. The current tree includes:
 Still to complete:
 
 - `Match` block parsing and evaluation
-- monitor-side re-verification of public-key userauth signatures via the planned x/crypto patch
-- full certificate option parity and `AuthorizedPrincipalsCommand`
+- `AuthenticationMethods` composition (currently rejected rather than silently ignored)
+- `AuthorizedKeysCommand` / `AuthorizedPrincipalsCommand` execution
+- full certificate option parity
 - optional PAM backend
 - broader OpenSSH configuration compatibility and hardening work
 

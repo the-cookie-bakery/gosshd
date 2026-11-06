@@ -115,6 +115,9 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "UsePAM is not supported by this build; set UsePAM no")
 		return 1
 	}
+	if cfg.AuthorizedKeysCommand != "" {
+		log.Printf("warning: AuthorizedKeysCommand is configured but is not executed by this build")
+	}
 	if err := crypto.Apply(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

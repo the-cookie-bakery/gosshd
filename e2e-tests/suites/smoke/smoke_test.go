@@ -94,6 +94,8 @@ LogLevel DEBUG
 	client = dial(t, port, clientCfg)
 	runID(t, client, name)
 	testPTY(t, client, name)
+	testConcurrentSessions(t, client, name)
+	testSignal(t, client)
 	testSFTP(t, client, home)
 	client.Close()
 	_ = hostSigner
@@ -115,6 +117,72 @@ func testPTY(t *testing.T, client *ssh.Client, want string) {
 	}
 	if strings.TrimSpace(string(out)) != want {
 		t.Fatalf("pty got %q, want %q", string(out), want)
+	}
+}
+
+func testConcurrentSessions(t *testing.T, client *ssh.Client, want string) {
+	t.Helper()
+	first, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if err := first.Start("sleep 10"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	errCh := make(chan error, 1)
+	go func() {
+		second, err := client.NewSession()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		defer second.Close()
+		out, err := second.CombinedOutput("id -un")
+		if err != nil {
+			errCh <- fmt.Errorf("second session: %v: %s", err, out)
+			return
+		}
+		if strings.TrimSpace(string(out)) != want {
+			errCh <- fmt.Errorf("second session got %q, want %q", strings.TrimSpace(string(out)), want)
+			return
+		}
+		errCh <- nil
+	}()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("second session blocked behind first session")
+	}
+}
+
+func testSignal(t *testing.T, client *ssh.Client) {
+	t.Helper()
+	s, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Start("sleep 30"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := s.Signal(ssh.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = s.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session did not terminate after signal")
 	}
 }
 

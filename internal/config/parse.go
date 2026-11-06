@@ -286,7 +286,7 @@ func (p *parser) apply(key string, args []string, source string) error {
 			return err
 		}
 		d, err := parseDuration(v)
-		if err != nil {
+		if err != nil || d < 0 {
 			return fmt.Errorf("invalid LoginGraceTime %q", v)
 		}
 		if p.first(k) {
@@ -525,7 +525,7 @@ func (p *parser) apply(key string, args []string, source string) error {
 			}
 		}
 	case "authenticationmethods":
-		p.cfg.AuthenticationMethods = append(p.cfg.AuthenticationMethods, strings.Join(args, " "))
+		return errors.New("AuthenticationMethods is not supported yet")
 	case "allowusers":
 		p.cfg.AllowUsers = append(p.cfg.AllowUsers, args...)
 	case "denyusers":

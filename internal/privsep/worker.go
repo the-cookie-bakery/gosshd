@@ -11,6 +11,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -180,26 +181,32 @@ func RunWorker() error {
 		}
 		return resultPerms(res)
 	}
-	serverCfg.KeyboardInteractiveCallback = func(conn ssh.ConnMetadata, client ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
-		ans, err := client("", "", []string{"Password: "}, []bool{false})
-		if err != nil || len(ans) != 1 {
-			return nil, errors.New("password required")
+	if cfg.KbdInteractiveAuthentication {
+		serverCfg.KeyboardInteractiveCallback = func(conn ssh.ConnMetadata, client ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+			ans, err := client("", "", []string{"Password: "}, []bool{false})
+			if err != nil || len(ans) != 1 {
+				return nil, errors.New("password required")
+			}
+			res, _, err := rpc.call(&Packet{Type: "keyboard", User: conn.User(), Password: []byte(ans[0]), Remote: conn.RemoteAddr().String()})
+			if err != nil {
+				return nil, err
+			}
+			return resultPerms(res)
 		}
-		res, _, err := rpc.call(&Packet{Type: "keyboard", User: conn.User(), Password: []byte(ans[0]), Remote: conn.RemoteAddr().String()})
-		if err != nil {
-			return nil, err
-		}
-		return resultPerms(res)
 	}
 	serverCfg.AuthLogCallback = func(conn ssh.ConnMetadata, method string, err error) {
 		if err != nil {
 			log.Printf("auth failed user=%q method=%s remote=%s", conn.User(), method, conn.RemoteAddr())
 		}
 	}
+	if cfg.LoginGraceTime > 0 {
+		_ = conn.SetDeadline(time.Now().Add(cfg.LoginGraceTime))
+	}
 	sshConn, chans, reqs, err := ssh.NewServerConn(conn, serverCfg)
 	if err != nil {
 		return fmt.Errorf("ssh handshake: %w", err)
 	}
+	_ = conn.SetDeadline(time.Time{})
 	defer sshConn.Close()
 	go ssh.DiscardRequests(reqs)
 	for newChan := range chans {

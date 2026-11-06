@@ -70,7 +70,7 @@ Planned/required RPCs:
 | `session_wait` | Monitor reaps the session and returns exit status |
 | `session_close` | Monitor terminates and cleans up a session |
 
-The worker treats monitor RPC responses as authoritative. The monitor treats worker input as untrusted and derives session identity from its own authenticated connection state.
+The worker treats monitor RPC responses as authoritative. The monitor treats worker input as untrusted and derives session identity from its own authenticated connection state. Packets for a connection are dispatched concurrently, so long-running `session_wait` calls do not block resize, signal, close, or other sessions.
 
 ## 4. Cryptographic baseline
 
@@ -161,7 +161,8 @@ Implemented checks include:
 - `/etc/nologin` for non-root users
 - password expiry, account expiry, and inactivity fields
 - `MaxAuthTries`, `MaxSessions`, `MaxStartups` connection cap
-- login grace handling planned via connection deadlines
+- `LoginGraceTime` via a connection deadline covering the handshake and authentication
+- keyboard-interactive gated by `KbdInteractiveAuthentication`
 
 ### Public-key authentication
 
@@ -170,7 +171,7 @@ Implemented checks include:
 3. Worker verifies the userauth signature using x/crypto.
 4. Monitor returns effective permissions: forced command, source restriction, environment restrictions, no-PTY, no-user-rc, and similar options.
 
-Current limitation: x/crypto does not expose userauth signature bytes to callbacks, so monitor-side re-verification requires a small pinned x/crypto patch. That patch is not yet present in the tree.
+The worker's x/crypto server verifies the userauth signature before authentication succeeds, so monitor-side authorization before signature verification is not a security hole. Current x/crypto (v0.58+) also exposes `VerifiedPublicKeyCallback` and `PartialSuccessError`; adopting `VerifiedPublicKeyCallback` would let the monitor make signature-aware decisions without vendoring a patch.
 
 ## 6. Configuration compatibility target
 
@@ -185,9 +186,9 @@ The parser currently supports:
 Not yet implemented:
 
 - `Match` blocks and Match-scoped directives
-- `AuthorizedKeysCommand` execution
+- `AuthorizedKeysCommand` execution (the keyword is parsed and now warns at startup, but the command is not run)
 - `AuthorizedPrincipalsCommand` execution
-- full `AuthenticationMethods` composition
+- full `AuthenticationMethods` composition; configurations that set it are rejected instead of being silently ignored
 - complete OpenSSH directive semantics for every accepted keyword
 - full certificate option/extension parity
 
@@ -229,7 +230,7 @@ Implemented:
 Remaining hardening:
 
 - drop monitor capabilities after startup
-- vendor and maintain the minimal x/crypto public-key verification hook
+- adopt `VerifiedPublicKeyCallback` for monitor-side, signature-aware authorization (no vendored patch needed)
 - add worker/session seccomp or Landlock profiles
 - add monitor-side rate limiting and authentication penalties
 - add fuzzing for RPC, config, authorized_keys, certificates, and SFTP

@@ -66,10 +66,76 @@ type session struct {
 	counted     bool
 }
 
+func (s *session) closeMaster() {
+	s.mu.Lock()
+	m := s.master
+	s.master = nil
+	s.mu.Unlock()
+	if m != nil {
+		m.Close()
+	}
+}
+
 type sessionState struct {
 	perms    *auth.Permissions
 	sessions map[string]*session
+	closed   bool
 	mu       sync.Mutex
+}
+
+func newSessionState() *sessionState {
+	return &sessionState{sessions: map[string]*session{}}
+}
+
+func (st *sessionState) setPerms(p *auth.Permissions) {
+	st.mu.Lock()
+	st.perms = p
+	st.mu.Unlock()
+}
+
+func (st *sessionState) getPerms() *auth.Permissions {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.perms
+}
+
+func (st *sessionState) getSession(id string) *session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.sessions[id]
+}
+
+func (st *sessionState) addSessionIfRoom(s *session, max int) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.closed {
+		return errors.New("connection is closing")
+	}
+	if len(st.sessions) >= max {
+		return errors.New("too many sessions")
+	}
+	st.sessions[s.id] = s
+	return nil
+}
+
+func (st *sessionState) removeSession(id string) *session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	s := st.sessions[id]
+	delete(st.sessions, id)
+	return s
+}
+
+func (st *sessionState) takeAll() []*session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.closed = true
+	out := make([]*session, 0, len(st.sessions))
+	for _, s := range st.sessions {
+		out = append(out, s)
+	}
+	st.sessions = map[string]*session{}
+	return out
 }
 
 type Monitor struct {
@@ -217,7 +283,8 @@ func (m *Monitor) handleConn(conn net.Conn) {
 		return
 	}
 	defer pc.Close()
-	st := &sessionState{perms: nil, sessions: map[string]*session{}}
+	st := newSessionState()
+	var handlers sync.WaitGroup
 	for {
 		pkt, fds, err := pc.Read()
 		for _, fd := range fds {
@@ -227,35 +294,56 @@ func (m *Monitor) handleConn(conn net.Conn) {
 			log.Printf("control read: %v", err)
 			break
 		}
-		res := m.handlePacket(st, pkt)
-		var sendFDs []int
-		var closeAfter []*os.File
-		if res != nil && pkt.Type == "session_open" && res.OK {
-			if s := st.sessions[res.SessionID]; s != nil {
-				for _, f := range s.workerFiles {
-					sendFDs = append(sendFDs, int(f.Fd()))
-				}
-				if !s.pty {
-					closeAfter = append(closeAfter, s.workerFiles...)
-					s.workerFiles = nil
-				}
+		handlers.Add(1)
+		go func(pkt *Packet) {
+			defer handlers.Done()
+			m.handleAndRespond(st, pc, pkt)
+		}(pkt)
+	}
+	shutdownSessions(st)
+	pc.Close()
+	handlers.Wait()
+	shutdownSessions(st)
+	cmd.Wait()
+}
+
+func (m *Monitor) handleAndRespond(st *sessionState, pc *PacketConn, pkt *Packet) {
+	res := m.handlePacket(st, pkt)
+	var sendFDs []int
+	var closeAfter []*os.File
+	if res != nil && res.OK && pkt.Type == "session_open" {
+		if s := st.getSession(res.SessionID); s != nil {
+			s.mu.Lock()
+			files := s.workerFiles
+			if !s.pty {
+				s.workerFiles = nil
+			}
+			s.mu.Unlock()
+			for _, f := range files {
+				sendFDs = append(sendFDs, int(f.Fd()))
+			}
+			if !s.pty {
+				closeAfter = files
 			}
 		}
-		resp := &Packet{ID: pkt.ID, Type: "response", Result: res}
-		if err := pc.Write(resp, sendFDs...); err != nil {
-			closeFiles(closeAfter...)
-			log.Printf("control write: %v", err)
-			break
-		}
+	}
+	resp := &Packet{ID: pkt.ID, Type: "response", Result: res}
+	if err := pc.Write(resp, sendFDs...); err != nil {
 		closeFiles(closeAfter...)
+		log.Printf("control write: %v", err)
+		return
 	}
-	for _, s := range st.sessions {
-		s.cmd.Process.Kill()
-		if s.master != nil {
-			s.master.Close()
+	closeFiles(closeAfter...)
+}
+
+func shutdownSessions(st *sessionState) {
+	for _, s := range st.takeAll() {
+		if s.cmd.Process != nil {
+			_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGKILL)
+			_ = s.cmd.Process.Kill()
 		}
+		s.closeMaster()
 	}
-	cmd.Wait()
 }
 
 func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
@@ -277,8 +365,11 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		}
 		return &Result{OK: true, Signature: sig}
 	case "password", "keyboard":
-		if !m.cfg.PasswordAuthentication && p.Type == "password" {
+		if p.Type == "password" && !m.cfg.PasswordAuthentication {
 			return &Result{Error: "password authentication disabled"}
+		}
+		if p.Type == "keyboard" && !m.cfg.KbdInteractiveAuthentication {
+			return &Result{Error: "keyboard-interactive authentication disabled"}
 		}
 		perms, err := m.auth.Password(p.User, p.Password, remoteFromString(p.Remote))
 		for i := range p.Password {
@@ -287,7 +378,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if err != nil {
 			return &Result{Error: err.Error()}
 		}
-		st.perms = perms
+		st.setPerms(perms)
 		return &Result{OK: true, Permissions: perms}
 	case "pubkey_authorize":
 		if !m.cfg.PubkeyAuthentication {
@@ -301,50 +392,62 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if err != nil {
 			return &Result{Error: err.Error()}
 		}
-		st.perms = perms
+		st.setPerms(perms)
 		return &Result{OK: true, Permissions: perms}
 	case "session_open":
-		if st.perms == nil {
+		perms := st.getPerms()
+		if perms == nil {
 			return &Result{Error: "not authenticated"}
 		}
-		id, err := m.openSession(st, p)
+		id, err := m.openSession(st, perms, p)
 		if err != nil {
 			return &Result{Error: err.Error()}
 		}
 		return &Result{OK: true, SessionID: id}
 	case "session_resize":
-		s := st.sessions[p.SessionID]
-		if s == nil || !s.pty || s.master == nil {
+		s := st.getSession(p.SessionID)
+		if s == nil || !s.pty {
 			return &Result{Error: "unknown session"}
 		}
-		if err := pty.Setsize(s.master, &pty.Winsize{Cols: uint16(p.Width), Rows: uint16(p.Height)}); err != nil {
+		s.mu.Lock()
+		master := s.master
+		s.mu.Unlock()
+		if master == nil {
+			return &Result{Error: "unknown session"}
+		}
+		if err := pty.Setsize(master, &pty.Winsize{Cols: uint16(p.Width), Rows: uint16(p.Height)}); err != nil {
 			return &Result{Error: err.Error()}
 		}
 		return &Result{OK: true}
 	case "session_signal":
-		s := st.sessions[p.SessionID]
+		s := st.getSession(p.SessionID)
 		if s == nil || s.cmd.Process == nil {
 			return &Result{Error: "unknown session"}
 		}
-		_ = s.cmd.Process.Signal(syscall.Signal(p.Signal))
+		sig := syscall.Signal(p.Signal)
+		if err := syscall.Kill(-s.cmd.Process.Pid, sig); err != nil {
+			_ = s.cmd.Process.Signal(sig)
+		}
 		return &Result{OK: true}
 	case "session_wait":
-		s := st.sessions[p.SessionID]
+		s := st.getSession(p.SessionID)
 		if s == nil {
 			return &Result{Error: "unknown session"}
 		}
 		<-s.done
-		log.Printf("monitor session wait id=%s exit=%d signal=%q", p.SessionID, s.exit, s.signal)
-		res := &Result{OK: true, ExitStatus: s.exit, Signal: s.signal}
-		st.mu.Lock()
-		delete(st.sessions, p.SessionID)
-		st.mu.Unlock()
-		if s.master != nil {
-			s.master.Close()
+		s.mu.Lock()
+		exit, sig, waitErr := s.exit, s.signal, s.waitErr
+		s.mu.Unlock()
+		if waitErr != nil {
+			log.Printf("monitor session wait id=%s err=%v", p.SessionID, waitErr)
 		}
+		log.Printf("monitor session wait id=%s exit=%d signal=%q", p.SessionID, exit, sig)
+		res := &Result{OK: true, ExitStatus: exit, Signal: sig}
+		st.removeSession(p.SessionID)
+		s.closeMaster()
 		return res
 	case "session_close":
-		s := st.sessions[p.SessionID]
+		s := st.removeSession(p.SessionID)
 		if s == nil {
 			return &Result{OK: true}
 		}
@@ -352,25 +455,15 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 			_ = syscall.Kill(-s.cmd.Process.Pid, syscall.SIGKILL)
 			_ = s.cmd.Process.Kill()
 		}
-		if s.master != nil {
-			s.master.Close()
-		}
-		delete(st.sessions, p.SessionID)
+		s.closeMaster()
 		return &Result{OK: true}
 	default:
 		return &Result{Error: "unknown request"}
 	}
 }
 
-func (m *Monitor) openSession(st *sessionState, p *Packet) (string, error) {
-	log.Printf("monitor open session user=%q pty=%v command=%q subsystem=%q", st.perms.Username, p.Pty, p.Command, p.Subsystem)
-	st.mu.Lock()
-	if len(st.sessions) >= m.cfg.MaxSessions {
-		st.mu.Unlock()
-		return "", errors.New("too many sessions")
-	}
-	st.mu.Unlock()
-	perms := st.perms
+func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Packet) (string, error) {
+	log.Printf("monitor open session user=%q pty=%v command=%q subsystem=%q", perms.Username, p.Pty, p.Command, p.Subsystem)
 	if p.Pty && (!m.cfg.PermitTTY || perms.NoPTY) {
 		return "", errors.New("pty not permitted")
 	}
@@ -482,9 +575,12 @@ func (m *Monitor) openSession(st *sessionState, p *Packet) (string, error) {
 		s.mu.Unlock()
 		close(s.done)
 	}()
-	st.mu.Lock()
-	st.sessions[id] = s
-	st.mu.Unlock()
+	if err := st.addSessionIfRoom(s, m.cfg.MaxSessions); err != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Process.Kill()
+		closeFiles(workerFiles...)
+		return "", err
+	}
 	log.Printf("monitor session started id=%s pid=%d", id, cmd.Process.Pid)
 	return id, nil
 }

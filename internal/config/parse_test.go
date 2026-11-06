@@ -91,3 +91,25 @@ func TestParseOption(t *testing.T) {
 		t.Fatal("option not applied")
 	}
 }
+
+func TestRejectsAuthenticationMethods(t *testing.T) {
+	if _, err := ParseReader(strings.NewReader("AuthenticationMethods publickey,password\n"), "test"); err == nil {
+		t.Fatal("expected AuthenticationMethods to be rejected")
+	}
+}
+
+func TestRejectsNegativeLoginGraceTime(t *testing.T) {
+	if _, err := ParseReader(strings.NewReader("LoginGraceTime -5\n"), "test"); err == nil {
+		t.Fatal("expected negative LoginGraceTime to be rejected")
+	}
+}
+
+func TestAcceptsZeroLoginGraceTime(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("LoginGraceTime 0\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LoginGraceTime != 0 {
+		t.Fatalf("LoginGraceTime=%v", cfg.LoginGraceTime)
+	}
+}

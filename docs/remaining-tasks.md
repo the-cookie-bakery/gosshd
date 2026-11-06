@@ -41,9 +41,9 @@ Current E2E suites: `smoke`.
 | CFG-01 | Core `sshd_config` parser: comments, quotes, first-value semantics, common directives, unknown-keyword rejection | Done | `TestParseBasic`, `TestFirstValueWins`, `TestQuotesAndComments`, `TestUnknownKeyword`, `TestParseOption` | Smoke configs use `Port`, `ListenAddress`, `HostKey`, auth, `AuthorizedKeysFile`, and `Subsystem` |
 | CFG-02 | `Include` directive with glob expansion and recursion protection | Done | Parser tests cover basic parsing; no dedicated Include test | Not covered |
 | CFG-03 | `Match` blocks for User, Group, Address, LocalAddress, LocalPort, All; Match-scoped directives | Pending | No tests | Not covered; parser currently rejects Match |
-| CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Partial | Keyword parsed only; no execution test | Not covered |
+| CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Partial | Parsed only; startup warning emitted; no execution test | Not covered |
 | CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Pending | Not implemented | Not covered |
-| CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Partial | Parsed only; no composed-auth test | Only single-method password/public-key paths covered |
+| CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Pending | Configurations are rejected at parse time instead of being silently ignored; composition not implemented | Not covered |
 | CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | Parser accepts values; behavior is not fully implemented | Not covered |
 | CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` and `-T` manually verified | Smoke suite starts daemon with generated config; no negative config E2E |
 | CFG-09 | Match/Include E2E fixtures | Pending | None | Needed |
@@ -75,8 +75,9 @@ Current E2E suites: `smoke`.
 | AUTH-10 | Password failure delay, rate limiting, and user-enumeration resistance | Pending | No tests | Not covered |
 | AUTH-11 | Password length limits and timing-safe comparison audit | Partial | Crypt library comparison used; no explicit limit or test | Not covered |
 | AUTH-12 | PAM backend for account/session policy and MFA | Deferred | Backend interface exists; no PAM implementation | Not covered |
-| AUTH-13 | Keyboard-interactive backed by password crypt path | Done | No dedicated test | Not covered; smoke suite uses password method |
+| AUTH-13 | Keyboard-interactive backed by password crypt path, gated by `KbdInteractiveAuthentication` | Done | Worker callback registered only when enabled; monitor rejects disabled requests; no dedicated test | Not covered; smoke suite uses password method |
 | AUTH-14 | Authentication negative test matrix: wrong password, locked, expired, denied user, denied group, bad key options | Pending | None | Needed |
+| AUTH-15 | `LoginGraceTime` connection deadline covering handshake and authentication | Done | Parse validation for negative values; no deadline unit test | Not covered |
 
 ### 3.4 Privilege separation and process hardening
 
@@ -85,13 +86,14 @@ Current E2E suites: `smoke`.
 | PRIV-01 | Privileged monitor, unprivileged per-connection worker, per-session launcher | Done | Manual process inspection in container | Sessions run as target user in smoke suite; E2E does not yet assert worker uid separation |
 | PRIV-02 | Host private keys stay in monitor; host-key signing over RPC | Done | No dedicated unit test | Host-key handshake succeeds in smoke suite |
 | PRIV-03 | Session launcher drops uid/gid/groups, applies `no_new_privs`, limits, env, chroot | Partial | No dedicated unit test | Password/key/PTY/SFTP sessions in smoke suite |
-| PRIV-04 | Monitor-side re-verification of public-key userauth signatures | Pending | Requires vendored/pinned x/crypto hook | Not covered |
+| PRIV-04 | Monitor-side verification of public-key userauth signatures | Pending | Not a security blocker: the worker's x/crypto server verifies the signature before auth succeeds. x/crypto v0.58+ provides `VerifiedPublicKeyCallback`; adoption pending, no vendored patch needed | Not covered |
 | PRIV-05 | Drop monitor capabilities after startup | Pending | Not implemented | Not covered |
 | PRIV-06 | Worker and session sandboxing (seccomp/Landlock) | Pending | Not implemented | Not covered |
 | PRIV-07 | Bounded RPC protocol hardening and malformed-message handling | Partial | Length-limited framing and fd passing are implemented; no fuzz test | Not covered |
 | PRIV-08 | Forged worker RPC tests: cannot impersonate another user or open unauthorized sessions | Pending | None | Needed |
 | PRIV-09 | Chroot path ownership and component validation | Pending | Only configured chroot is applied | Not covered |
 | PRIV-10 | Process cleanup and session reaping under disconnect/timeout | Partial | Basic cleanup implemented | Not covered |
+| PRIV-11 | Concurrent RPC dispatch without head-of-line blocking | Done | `handleConn` dispatches packets on goroutines, session state is mutex-guarded, cleanup drains handlers; race tests pass | Concurrent-session and signal smoke regressions added |
 
 ### 3.5 Sessions, PTY, and SFTP
 
@@ -168,7 +170,7 @@ The following areas are implemented and have at least smoke or unit verification
 
 ### Milestone A: security-critical corrections
 
-1. Vendor and integrate the minimal x/crypto signature-verification hook.
+1. Adopt `VerifiedPublicKeyCallback` for signature-aware monitor authorization (no vendored patch required).
 2. Add monitor capability dropping and worker/session sandboxing.
 3. Add forged-RPC and worker-isolation tests.
 4. Add public-key negative tests and certificate E2E coverage.
