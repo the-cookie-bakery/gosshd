@@ -537,7 +537,33 @@ func (p *parser) apply(key string, args []string, source string) error {
 			}
 		}
 	case "authenticationmethods":
-		return errors.New("the AuthenticationMethods directive is not supported yet")
+		if len(args) == 0 {
+			return errors.New("AuthenticationMethods requires an argument")
+		}
+		if !p.first(k) {
+			break
+		}
+		alternatives := make([][]string, 0, len(args))
+		for _, arg := range args {
+			parts := strings.Split(arg, ",")
+			alternative := make([]string, 0, len(parts))
+			for _, part := range parts {
+				method := strings.ToLower(strings.TrimSpace(part))
+				switch method {
+				case "publickey", "password", "keyboard-interactive":
+					alternative = append(alternative, method)
+				case "":
+					return errors.New("AuthenticationMethods contains an empty method")
+				default:
+					return fmt.Errorf("unsupported AuthenticationMethods method %q", method)
+				}
+			}
+			if len(alternative) == 0 {
+				return errors.New("AuthenticationMethods contains an empty list")
+			}
+			alternatives = append(alternatives, alternative)
+		}
+		p.cfg.AuthenticationMethods = alternatives
 	case "allowusers":
 		p.cfg.AllowUsers = append(p.cfg.AllowUsers, args...)
 	case "denyusers":

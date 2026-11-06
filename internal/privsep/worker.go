@@ -165,43 +165,16 @@ func RunWorker() error {
 	for _, s := range signers {
 		serverCfg.AddHostKey(s)
 	}
-	serverCfg.PasswordCallback = func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-		if !cfg.PasswordAuthentication {
-			return nil, errors.New("password authentication disabled")
-		}
-		res, _, err := rpc.call(&Packet{Type: "password", User: conn.User(), Password: append([]byte(nil), password...), Remote: conn.RemoteAddr().String()})
-		if err != nil {
-			return nil, err
-		}
-		return resultPerms(res)
+	auth := &authHandler{rpc: rpc, cfg: cfg}
+	initialMethods := initialAuthMethods(cfg.AuthenticationMethods)
+	if len(cfg.AuthenticationMethods) == 0 {
+		initialMethods = []string{"publickey", "password", "keyboard-interactive"}
 	}
-	serverCfg.PublicKeyCallback = func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-		res, _, err := rpc.call(&Packet{Type: "pubkey_authorize", User: conn.User(), Key: key.Marshal(), Remote: conn.RemoteAddr().String()})
-		if err != nil {
-			return nil, err
-		}
-		return resultPerms(res)
-	}
-	serverCfg.VerifiedPublicKeyCallback = func(conn ssh.ConnMetadata, key ssh.PublicKey, permissions *ssh.Permissions, signatureAlgorithm string) (*ssh.Permissions, error) {
-		res, _, err := rpc.call(&Packet{Type: "pubkey_verified", User: conn.User(), Key: key.Marshal(), Algo: signatureAlgorithm, Remote: conn.RemoteAddr().String()})
-		if err != nil {
-			return nil, err
-		}
-		return resultPerms(res)
-	}
-	if cfg.KbdInteractiveAuthentication {
-		serverCfg.KeyboardInteractiveCallback = func(conn ssh.ConnMetadata, client ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
-			ans, err := client("", "", []string{"Password: "}, []bool{false})
-			if err != nil || len(ans) != 1 {
-				return nil, errors.New("password required")
-			}
-			res, _, err := rpc.call(&Packet{Type: "keyboard", User: conn.User(), Password: []byte(ans[0]), Remote: conn.RemoteAddr().String()})
-			if err != nil {
-				return nil, err
-			}
-			return resultPerms(res)
-		}
-	}
+	initialCallbacks := auth.callbacks(initialMethods)
+	serverCfg.PasswordCallback = initialCallbacks.PasswordCallback
+	serverCfg.PublicKeyCallback = initialCallbacks.PublicKeyCallback
+	serverCfg.KeyboardInteractiveCallback = initialCallbacks.KeyboardInteractiveCallback
+	serverCfg.VerifiedPublicKeyCallback = auth.verifiedCallback
 	serverCfg.AuthLogCallback = func(conn ssh.ConnMetadata, method string, err error) {
 		if err != nil {
 			log.Printf("auth failed user=%q method=%s remote=%s", conn.User(), method, conn.RemoteAddr())
@@ -263,6 +236,84 @@ func applyTCPKeepAlive(conn net.Conn, enabled bool) {
 	if tcp, ok := conn.(*net.TCPConn); ok {
 		_ = tcp.SetKeepAlive(enabled)
 	}
+}
+
+type authHandler struct {
+	rpc *rpcClient
+	cfg *config.Config
+}
+
+func (h *authHandler) callbacks(methods []string) ssh.ServerAuthCallbacks {
+	var callbacks ssh.ServerAuthCallbacks
+	for _, method := range methods {
+		switch method {
+		case "password":
+			if h.cfg.PasswordAuthentication {
+				callbacks.PasswordCallback = h.passwordCallback
+			}
+		case "keyboard-interactive":
+			if h.cfg.KbdInteractiveAuthentication {
+				callbacks.KeyboardInteractiveCallback = h.keyboardCallback
+			}
+		case "publickey":
+			if h.cfg.PubkeyAuthentication {
+				callbacks.PublicKeyCallback = h.publicKeyQuery
+			}
+		}
+	}
+	return callbacks
+}
+
+func (h *authHandler) passwordCallback(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+	res, _, err := h.rpc.call(&Packet{Type: "password", User: conn.User(), Password: append([]byte(nil), password...), Remote: conn.RemoteAddr().String()})
+	if err != nil {
+		return nil, err
+	}
+	return h.result(res)
+}
+
+func (h *authHandler) keyboardCallback(conn ssh.ConnMetadata, client ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+	ans, err := client("", "", []string{"Password: "}, []bool{false})
+	if err != nil || len(ans) != 1 {
+		return nil, errors.New("password required")
+	}
+	res, _, err := h.rpc.call(&Packet{Type: "keyboard", User: conn.User(), Password: []byte(ans[0]), Remote: conn.RemoteAddr().String()})
+	if err != nil {
+		return nil, err
+	}
+	return h.result(res)
+}
+
+func (h *authHandler) publicKeyQuery(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	res, _, err := h.rpc.call(&Packet{Type: "pubkey_authorize", User: conn.User(), Key: key.Marshal(), Remote: conn.RemoteAddr().String()})
+	if err != nil {
+		return nil, err
+	}
+	return resultPerms(res)
+}
+
+func (h *authHandler) verifiedCallback(conn ssh.ConnMetadata, key ssh.PublicKey, permissions *ssh.Permissions, signatureAlgorithm string) (*ssh.Permissions, error) {
+	res, _, err := h.rpc.call(&Packet{Type: "pubkey_verified", User: conn.User(), Key: key.Marshal(), Algo: signatureAlgorithm, Remote: conn.RemoteAddr().String()})
+	if err != nil {
+		return nil, err
+	}
+	return h.result(res)
+}
+
+func (h *authHandler) result(res *Result) (*ssh.Permissions, error) {
+	if res == nil {
+		return nil, errors.New("empty auth response")
+	}
+	if res.Partial {
+		return nil, &ssh.PartialSuccessError{Next: h.callbacks(res.NextMethods)}
+	}
+	if !res.OK || res.Permissions == nil {
+		if res.Error == "" {
+			return nil, auth.ErrAccessDenied
+		}
+		return nil, errors.New(res.Error)
+	}
+	return resultPerms(res)
 }
 
 func resultPerms(res *Result) (*ssh.Permissions, error) {

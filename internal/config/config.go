@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -67,7 +68,7 @@ type Config struct {
 	RequiredRSASize          int
 	RekeyLimit               int64
 
-	AuthenticationMethods []string
+	AuthenticationMethods [][]string
 	AllowUsers            []string
 	DenyUsers             []string
 	AllowGroups           []string
@@ -118,7 +119,10 @@ func (c *Config) Clone() *Config {
 	d.MACs = append([]string(nil), c.MACs...)
 	d.HostKeyAlgorithms = append([]string(nil), c.HostKeyAlgorithms...)
 	d.PubkeyAcceptedAlgorithms = append([]string(nil), c.PubkeyAcceptedAlgorithms...)
-	d.AuthenticationMethods = append([]string(nil), c.AuthenticationMethods...)
+	d.AuthenticationMethods = make([][]string, len(c.AuthenticationMethods))
+	for i := range c.AuthenticationMethods {
+		d.AuthenticationMethods[i] = append([]string(nil), c.AuthenticationMethods[i]...)
+	}
 	d.AllowUsers = append([]string(nil), c.AllowUsers...)
 	d.DenyUsers = append([]string(nil), c.DenyUsers...)
 	d.AllowGroups = append([]string(nil), c.AllowGroups...)
@@ -132,6 +136,30 @@ func (c *Config) Clone() *Config {
 		d.Subsystems[k] = v
 	}
 	return &d
+}
+
+func (c *Config) Validate() error {
+	for _, alternative := range c.AuthenticationMethods {
+		for _, method := range alternative {
+			switch method {
+			case "publickey":
+				if !c.PubkeyAuthentication {
+					return fmt.Errorf("AuthenticationMethods uses publickey but PubkeyAuthentication is disabled")
+				}
+			case "password":
+				if !c.PasswordAuthentication {
+					return fmt.Errorf("AuthenticationMethods uses password but PasswordAuthentication is disabled")
+				}
+			case "keyboard-interactive":
+				if !c.KbdInteractiveAuthentication {
+					return fmt.Errorf("AuthenticationMethods uses keyboard-interactive but KbdInteractiveAuthentication is disabled")
+				}
+			default:
+				return fmt.Errorf("unsupported AuthenticationMethods method %q", method)
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Config) Listeners() ([]string, error) {

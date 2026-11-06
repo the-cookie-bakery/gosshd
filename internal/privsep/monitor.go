@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -81,6 +80,11 @@ type sessionState struct {
 	sessions map[string]*session
 	closed   bool
 	mu       sync.Mutex
+
+	remote net.Addr
+
+	authMu   sync.Mutex
+	authDone []string
 }
 
 func newSessionState() *sessionState {
@@ -241,6 +245,7 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	}
 	defer mon.Close()
 	defer worker.Close()
+	remoteAddr := conn.RemoteAddr()
 	tcpFile, err := connFile(conn)
 	if err != nil {
 		conn.Close()
@@ -285,6 +290,7 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	}
 	defer pc.Close()
 	st := newSessionState()
+	st.remote = remoteAddr
 	m.serveControl(pc, st)
 	cmd.Wait()
 }
@@ -370,29 +376,45 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		}
 		return &Result{OK: true, Signature: sig}
 	case "password", "keyboard":
-		if p.Type == "password" && !m.cfg.PasswordAuthentication {
+		method := "password"
+		if p.Type == "keyboard" {
+			method = "keyboard-interactive"
+		}
+		if method == "password" && !m.cfg.PasswordAuthentication {
 			return &Result{Error: "password authentication disabled"}
 		}
-		if p.Type == "keyboard" && !m.cfg.KbdInteractiveAuthentication {
+		if method == "keyboard-interactive" && !m.cfg.KbdInteractiveAuthentication {
 			return &Result{Error: "keyboard-interactive authentication disabled"}
 		}
-		host := remoteHost(p.Remote)
+		host := remoteHost(addrString(st.remote))
 		if delay := m.limiter.delay(host); delay > 0 {
 			time.Sleep(delay)
 		}
-		perms, err := m.auth.Password(p.User, p.Password, remoteFromString(p.Remote))
+		st.authMu.Lock()
+		perms, err := m.auth.Password(p.User, p.Password, st.remote)
 		for i := range p.Password {
 			p.Password[i] = 0
 		}
+		if err != nil {
+			st.authMu.Unlock()
+			m.limiter.failure(host)
+			authFailureSleep()
+			return &Result{Error: err.Error()}
+		}
+		final, next, err := m.advanceAuth(st, method)
+		st.authMu.Unlock()
 		if err != nil {
 			m.limiter.failure(host)
 			authFailureSleep()
 			return &Result{Error: err.Error()}
 		}
 		m.limiter.success(host)
-		st.setPerms(perms)
-		return &Result{OK: true, Permissions: perms}
-	case "pubkey_authorize", "pubkey_verified":
+		if final {
+			st.setPerms(perms)
+			return &Result{OK: true, Permissions: perms}
+		}
+		return &Result{OK: true, Partial: true, NextMethods: next}
+	case "pubkey_authorize":
 		if !m.cfg.PubkeyAuthentication {
 			return &Result{Error: "public key authentication disabled"}
 		}
@@ -400,12 +422,35 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if err != nil {
 			return &Result{Error: "invalid public key"}
 		}
-		perms, err := m.auth.PublicKey(p.User, key, remoteFromString(p.Remote))
+		perms, err := m.auth.PublicKey(p.User, key, st.remote)
 		if err != nil {
 			return &Result{Error: err.Error()}
 		}
-		st.setPerms(perms)
 		return &Result{OK: true, Permissions: perms}
+	case "pubkey_verified":
+		if !m.cfg.PubkeyAuthentication {
+			return &Result{Error: "public key authentication disabled"}
+		}
+		key, err := ssh.ParsePublicKey(p.Key)
+		if err != nil {
+			return &Result{Error: "invalid public key"}
+		}
+		st.authMu.Lock()
+		perms, err := m.auth.PublicKey(p.User, key, st.remote)
+		if err != nil {
+			st.authMu.Unlock()
+			return &Result{Error: err.Error()}
+		}
+		final, next, err := m.advanceAuth(st, "publickey")
+		st.authMu.Unlock()
+		if err != nil {
+			return &Result{Error: err.Error()}
+		}
+		if final {
+			st.setPerms(perms)
+			return &Result{OK: true, Permissions: perms}
+		}
+		return &Result{OK: true, Partial: true, NextMethods: next}
 	case "session_open":
 		perms := st.getPerms()
 		if perms == nil {
@@ -503,7 +548,7 @@ func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Pack
 		Home: perms.Home, Shell: perms.Shell,
 		Command: command, Subsystem: subsystem, SubsystemCommand: m.cfg.Subsystems[subsystem],
 		Chroot: chroot, Env: env,
-		Remote: p.Remote, NoUserRC: perms.NoUserRC || !m.cfg.PermitUserRC,
+		Remote: addrString(st.remote), NoUserRC: perms.NoUserRC || !m.cfg.PermitUserRC,
 		Pty: p.Pty,
 	}
 	for _, g := range perms.Groups {
@@ -664,16 +709,20 @@ func dedupeEnv(env []string) []string {
 	return out
 }
 
-func remoteFromString(s string) net.Addr {
-	if s == "" {
-		return nil
+func addrString(addr net.Addr) string {
+	if addr == nil {
+		return ""
 	}
-	host, portStr, err := net.SplitHostPort(s)
-	if err != nil {
-		return &net.TCPAddr{IP: net.ParseIP(s)}
+	return addr.String()
+}
+
+func (m *Monitor) advanceAuth(st *sessionState, method string) (bool, []string, error) {
+	final, next, done, ok := authStep(m.cfg.AuthenticationMethods, st.authDone, method)
+	if !ok {
+		return false, nil, errors.New("authentication method sequence not allowed")
 	}
-	port, _ := strconv.Atoi(portStr)
-	return &net.TCPAddr{IP: net.ParseIP(host), Port: port}
+	st.authDone = done
+	return final, next, nil
 }
 
 func sessionID() string {

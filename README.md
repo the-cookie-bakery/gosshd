@@ -20,7 +20,6 @@ This is an early implementation. The current tree includes:
 Still to complete:
 
 - `Match` block parsing and evaluation
-- `AuthenticationMethods` composition (currently rejected rather than silently ignored)
 - `AuthorizedKeysCommand` / `AuthorizedPrincipalsCommand` execution
 - full certificate option parity
 - optional PAM backend

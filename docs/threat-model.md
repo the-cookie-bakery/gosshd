@@ -85,6 +85,8 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 | Explicit modern algorithm allowlists and weak-algorithm rejection | `internal/crypto/policy.go` |
 | `RequiredRSASize` enforced for host, user, and certificate RSA keys | `internal/crypto`, `internal/auth` |
 | `authorized_keys` options, certificates, revocation, and `cert-authority` entries | `internal/auth` |
+| Monitor-owned connection identity for source/access checks | `internal/privsep/monitor.go` |
+| `AuthenticationMethods` composition with per-connection progress | `internal/privsep`, `internal/auth` |
 | Forged or unknown session RPC rejection and per-connection state isolation | `internal/privsep` |
 | Forwarding, agent, and X11 channels rejected and not advertised | `internal/privsep/worker.go` |
 | Authentication negative, privsep, certificate, and config E2E suites | `e2e-tests/suites` |
@@ -96,7 +98,7 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 - The monitor retains `CAP_DAC_OVERRIDE` and `CAP_KILL` for shadow/authorized-key access and session signaling. A monitor compromise therefore has more reach than a worker compromise.
 - The root-at-exec session launcher window is small but exists; hardening it further requires additional process-level sandboxing.
 - Forged-RPC coverage currently exercises the socket protocol and rejection paths; a full adversarial worker harness is still pending (`PRIV-08`).
-- `AuthenticationMethods` composition and `Match` blocks are not implemented yet; configurations using them are rejected rather than silently weakened.
+- `Match` blocks are not implemented yet; configurations using them are rejected rather than silently weakened.
 - `AuthorizedKeysCommand` is parsed and warned about but not executed.
 - Forwarding is intentionally disabled for v1.
 - PAM, FIPS 140-3 mode, and Ed448 are deferred; the first two are explicitly unsupported, and Ed448 is unavailable in the current x/crypto baseline.

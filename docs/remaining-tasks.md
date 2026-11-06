@@ -44,7 +44,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | CFG-03 | `Match` blocks for User, Group, Address, LocalAddress, LocalPort, All; Match-scoped directives | Pending | No tests | Not covered; parser currently rejects Match |
 | CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Partial | Parsed only; startup warning emitted; no execution test | Not covered |
 | CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Pending | Not implemented | Not covered |
-| CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Pending | Configurations are rejected at parse time instead of being silently ignored; composition not implemented | Not covered |
+| CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Done | Parsed alternatives, startup validation, per-connection auth-progress state machine, and `PartialSuccessError` callbacks; unit tests cover completion/partial/wrong-order cases | `auth` suite covers publickey+password success, single-factor failure, and wrong second factor |
 | CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*` and `TCPKeepAlive` are applied; compression, DNS, and forwarding options remain acknowledged only | `interop` exercises client-alive and TCP keepalive paths |
 | CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` and `-T` manually verified | Smoke suite starts daemon with generated config; no negative config E2E |
 | CFG-09 | Match/Include E2E fixtures | Pending | None | Needed |
@@ -126,7 +126,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | E2E-04 | Smoke suite: password auth, key auth, exec, PTY, internal SFTP | Done | N/A | Passing on Debian, Ubuntu, Fedora |
 | E2E-05 | Authentication negative matrix: wrong password, locked/expired, denied users/groups, bad key options | Done | New `auth` suite | Passing |
 | E2E-06 | Certificate E2E: host cert, user cert, principals, revocation, certificate key options | Done | New `cert` suite | Passing |
-| E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Partial | New `config` suite covers Include/recursion, weak algorithms, unknown keywords, AuthenticationMethods rejection, and `-T` | Match still pending |
+| E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Partial | `config` suite covers Include/recursion, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, and `-T` | Match still pending |
 | E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Done | `privsep` suite asserts uid separation, monitor capability reduction, empty worker capabilities, and `setpriv` access denial for shadow/host keys | Passing |
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Done | New `interop` suite | `ssh`, `scp`, and `sftp` pass |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Done | `interop` suite rejects direct-tcpip, remote forward, agent, and X11 requests | Passing |

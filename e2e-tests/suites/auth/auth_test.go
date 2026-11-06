@@ -205,3 +205,32 @@ func TestUnknownUserRejected(t *testing.T) {
 		t.Fatal("unknown user was accepted")
 	}
 }
+
+func TestAuthenticationMethods(t *testing.T) {
+	u := sshdtest.NewUser(t)
+	signer, _ := sshdtest.NewKey(t)
+	u.WriteAuthorizedKeys(t, signer.PublicKey())
+	srv := startServer(t, u, "AuthenticationMethods publickey,password\n")
+
+	client := sshdtest.Dial(t, srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer), ssh.Password(u.Password)))
+	sshdtest.MustRunAs(t, client, "id -un", u.Name)
+	client.Close()
+
+	c, err := sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.Password(u.Password)))
+	if err == nil {
+		c.Close()
+		t.Fatal("password-only authentication was accepted")
+	}
+
+	c, err = sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer)))
+	if err == nil {
+		c.Close()
+		t.Fatal("publickey-only authentication was accepted")
+	}
+
+	c, err = sshdtest.TryDial(srv.Port, sshdtest.ClientConfig(u.Name, ssh.PublicKeys(signer), ssh.Password("wrong-password")))
+	if err == nil {
+		c.Close()
+		t.Fatal("wrong second factor was accepted")
+	}
+}

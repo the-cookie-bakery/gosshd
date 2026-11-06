@@ -24,6 +24,8 @@ type Result struct {
 	SessionID   string
 	ExitStatus  int
 	Signal      string
+	Partial     bool
+	NextMethods []string
 }
 
 type Packet struct {

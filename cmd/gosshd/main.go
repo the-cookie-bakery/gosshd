@@ -111,6 +111,10 @@ func run(args []string) int {
 		}
 		cfg.LoginGraceTime = d
 	}
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if cfg.UsePAM {
 		fmt.Fprintln(os.Stderr, "UsePAM is not supported by this build; set UsePAM no")
 		return 1

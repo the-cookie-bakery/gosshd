@@ -54,7 +54,7 @@ func TestUnsupportedDirectivesRejected(t *testing.T) {
 	for name, body := range map[string]string{
 		"unknown":     "DefinitelyNotAKeyword yes\n",
 		"weak-cipher": "Ciphers aes128-cbc\n",
-		"authmethods": "AuthenticationMethods publickey,password\n",
+		"authmethods": "AuthenticationMethods publickey,bogus\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -64,6 +64,16 @@ func TestUnsupportedDirectivesRejected(t *testing.T) {
 				t.Fatalf("config accepted: %s", out)
 			}
 		})
+	}
+}
+
+func TestAuthenticationMethodsAccepted(t *testing.T) {
+	bin := requireBin(t)
+	dir := t.TempDir()
+	_, hostPath := sshdtest.NewHostKey(t, dir)
+	cfgPath := sshdtest.WriteFile(t, dir, "sshd_config", fmt.Sprintf("HostKey %s\nPasswordAuthentication yes\nPubkeyAuthentication yes\nAuthenticationMethods publickey,password\n", hostPath))
+	if out, code := testConfig(t, bin, cfgPath); code != 0 {
+		t.Fatalf("AuthenticationMethods config rejected (%d): %s", code, out)
 	}
 }
 

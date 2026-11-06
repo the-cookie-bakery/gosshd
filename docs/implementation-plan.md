@@ -173,7 +173,7 @@ Implemented checks include:
 3. Worker verifies the userauth signature using x/crypto.
 4. Monitor returns effective permissions: forced command, source restriction, environment restrictions, no-PTY, no-user-rc, and similar options.
 
-The worker's x/crypto server verifies the userauth signature before authentication succeeds. gosshd also uses `VerifiedPublicKeyCallback` to re-confirm authorization after signature proof, so no vendored x/crypto patch is required. `PartialSuccessError` is available for future `AuthenticationMethods` composition.
+The worker's x/crypto server verifies the userauth signature before authentication succeeds. gosshd also uses `VerifiedPublicKeyCallback` to re-confirm authorization after signature proof, so no vendored x/crypto patch is required. `AuthenticationMethods` composition uses `PartialSuccessError` with per-connection auth-progress tracking.
 
 ## 6. Configuration compatibility target
 
@@ -181,7 +181,7 @@ The parser currently supports:
 
 - comments, blank lines, quoted arguments, and first-value-wins semantics
 - `Include` with glob expansion and recursion protection
-- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`
+- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize` and `AuthenticationMethods`
 - explicit rejection of unknown keywords
 - explicit rejection of directives that try to re-enable weak cryptography
 
@@ -190,7 +190,6 @@ Not yet implemented:
 - `Match` blocks and Match-scoped directives
 - `AuthorizedKeysCommand` execution (the keyword is parsed and now warns at startup, but the command is not run)
 - `AuthorizedPrincipalsCommand` execution
-- full `AuthenticationMethods` composition; configurations that set it are rejected instead of being silently ignored
 - complete OpenSSH directive semantics for every accepted keyword
 - full certificate option/extension parity
 
@@ -225,6 +224,7 @@ Implemented:
 - worker drops to the `nobody` account when the monitor runs as root
 - session launcher drops to the target uid/gid and supplementary groups
 - session launcher applies `no_new_privs`, resource limits, umask, chroot, environment, and exec
+- the monitor owns remote/local connection identity; worker-supplied addresses are diagnostic only
 - the monitor drops unnecessary capabilities across all runtime threads after startup (fail-closed)
 - host private keys are not loaded by workers
 - worker RPC protocol bounds message size and uses fd passing
@@ -262,7 +262,7 @@ Suites verify:
 - `smoke`: password/public-key auth, exec, PTY, concurrent sessions, signals, internal SFTP
 - `auth`: wrong password, locked/expired/unknown accounts, allow/deny users, authorized_keys options, disabled auth methods, keyboard-interactive gating
 - `privsep`: worker and session uid separation
-- `config`: Include/recursion, weak algorithms, unknown keywords, `AuthenticationMethods` rejection, `-T` defaults
+- `config`: Include/recursion, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, `-T` defaults
 - `cert`: trusted user CA, principals file, revocation, `cert-authority` in `authorized_keys`, certificate force-command, host certificates
 - `interop`: real `ssh`/`scp`/`sftp`, exit status, PTY, client-alive longevity, `no-more-sessions`, and forwarding rejection
 - Debian, Ubuntu, and Fedora containers

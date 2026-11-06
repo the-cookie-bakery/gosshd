@@ -92,9 +92,42 @@ func TestParseOption(t *testing.T) {
 	}
 }
 
-func TestRejectsAuthenticationMethods(t *testing.T) {
-	if _, err := ParseReader(strings.NewReader("AuthenticationMethods publickey,password\n"), "test"); err == nil {
-		t.Fatal("expected AuthenticationMethods to be rejected")
+func TestAuthenticationMethods(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("AuthenticationMethods publickey,password publickey,keyboard-interactive\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.AuthenticationMethods) != 2 {
+		t.Fatalf("alternatives=%v", cfg.AuthenticationMethods)
+	}
+	if got := strings.Join(cfg.AuthenticationMethods[0], ","); got != "publickey,password" {
+		t.Fatalf("alternative 0=%q", got)
+	}
+	if got := strings.Join(cfg.AuthenticationMethods[1], ","); got != "publickey,keyboard-interactive" {
+		t.Fatalf("alternative 1=%q", got)
+	}
+	if _, err := ParseReader(strings.NewReader("AuthenticationMethods publickey,bogus\n"), "test"); err == nil {
+		t.Fatal("expected unsupported method to be rejected")
+	}
+	if _, err := ParseReader(strings.NewReader("AuthenticationMethods publickey,,password\n"), "test"); err == nil {
+		t.Fatal("expected empty method to be rejected")
+	}
+}
+
+func TestValidateAuthenticationMethodsToggles(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("PasswordAuthentication no\nAuthenticationMethods publickey,password\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected disabled password method to be rejected")
+	}
+	cfg, err = ParseReader(strings.NewReader("AuthenticationMethods publickey,password\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 
