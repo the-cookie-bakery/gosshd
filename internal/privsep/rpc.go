@@ -101,6 +101,14 @@ func (c *PacketConn) Write(p *Packet, fds ...int) error {
 	return err
 }
 
+func decodePacket(data []byte) (*Packet, error) {
+	p := &Packet{}
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 func (c *PacketConn) Read() (*Packet, []int, error) {
 	buf := make([]byte, maxPacket)
 	oob := make([]byte, 4096)
@@ -108,8 +116,8 @@ func (c *PacketConn) Read() (*Packet, []int, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	p := &Packet{}
-	if err := gob.NewDecoder(bytes.NewReader(buf[:n])).Decode(p); err != nil {
+	p, err := decodePacket(buf[:n])
+	if err != nil {
 		return nil, nil, err
 	}
 	fds, err := unix.ParseSocketControlMessage(oob[:oobn])

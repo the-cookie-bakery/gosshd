@@ -90,6 +90,7 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 | `AuthenticationMethods` composition with per-connection progress | `internal/privsep`, `internal/auth` |
 | `Match`-scoped policy resolved per connection with monitor-owned addresses | `internal/config`, `internal/auth`, `internal/privsep` |
 | Authorized-command execution: root-owned absolute binary, configured user, bounded output/time, no shell | `internal/auth/command.go` |
+| Worker seccomp deny-list (`TSYNC`) blocks exec, ptrace, mount, namespace, and privilege syscalls | `internal/privsep/seccomp_linux.go` |
 | Forged or unknown session RPC rejection and per-connection state isolation | `internal/privsep` |
 | Forwarding, agent, and X11 channels rejected and not advertised | `internal/privsep/worker.go` |
 | Authentication negative, privsep, certificate, and config E2E suites | `e2e-tests/suites` |
@@ -97,7 +98,7 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 ## 6. Residual risks and assumptions
 
 - The worker is exposed to untrusted network input through `golang.org/x/crypto/ssh`; a memory-safety or parser vulnerability there is outside gosshd's direct control.
-- Workers and session processes are not yet sandboxed with seccomp or Landlock (`PRIV-06`).
+- Workers are sandboxed with a seccomp deny-list; session processes still need a Landlock/seccomp policy (`PRIV-06`).
 - `AuthorizedKeysCommand` and `AuthorizedPrincipalsCommand` output is untrusted and parsed strictly, but the configured command binary runs with the configured user's privileges.
 - The monitor retains `CAP_DAC_OVERRIDE` and `CAP_KILL` for shadow/authorized-key access and session signaling. A monitor compromise therefore has more reach than a worker compromise.
 - The root-at-exec session launcher window is small but exists; hardening it further requires additional process-level sandboxing.

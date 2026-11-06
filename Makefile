@@ -6,7 +6,7 @@ E2E_SUITES ?= smoke,auth,privsep,config,cert,interop,sftp
 STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 
-.PHONY: build test unit e2e e2e-images e2e-clean fmt vet tidy race staticcheck govulncheck ci
+.PHONY: build test unit e2e e2e-images e2e-clean fmt vet tidy race staticcheck govulncheck fuzz ci
 
 build:
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -o bin/gosshd ./cmd/gosshd
@@ -30,6 +30,12 @@ staticcheck:
 
 govulncheck:
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+fuzz:
+	$(GO) test -run=^$$ -fuzz=FuzzParseReader -fuzztime=10s ./internal/config
+	$(GO) test -run=^$$ -fuzz=FuzzScanAuthorizedKeys -fuzztime=10s ./internal/auth
+	$(GO) test -run=^$$ -fuzz=FuzzPacketDecode -fuzztime=10s ./internal/privsep
+	$(GO) test -run=^$$ -fuzz=FuzzParseInternalSFTP -fuzztime=10s ./internal/session
 
 ci: build unit vet race staticcheck govulncheck
 

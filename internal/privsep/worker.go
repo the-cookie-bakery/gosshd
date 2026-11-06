@@ -188,6 +188,9 @@ func RunWorker() error {
 			log.Printf("auth failed user=%q method=%s remote=%s", conn.User(), method, conn.RemoteAddr())
 		}
 	}
+	if err := applyWorkerSandbox(); err != nil {
+		return fmt.Errorf("worker sandbox: %w", err)
+	}
 	if cfg.LoginGraceTime > 0 {
 		_ = conn.SetDeadline(time.Now().Add(cfg.LoginGraceTime))
 	}

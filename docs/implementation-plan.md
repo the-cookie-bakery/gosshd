@@ -221,13 +221,14 @@ Implemented:
 - session launcher applies `no_new_privs`, resource limits, umask, chroot, environment, and exec
 - the monitor owns remote/local connection identity; worker-supplied addresses are diagnostic only
 - the monitor drops unnecessary capabilities across all runtime threads after startup (fail-closed)
+- workers install a seccomp deny-list with `TSYNC` before serving SSH
 - host private keys are not loaded by workers
 - worker RPC protocol bounds message size and uses fd passing
 
 Remaining hardening:
 
-- add worker/session seccomp or Landlock profiles
-- add fuzzing for RPC, config, authorized_keys, certificates, and SFTP
+- add session-process Landlock/seccomp policy (worker sandbox is done)
+- extend fuzzing to certificate parsing and deeper SFTP paths
 
 ## 9. End-to-end test harness
 

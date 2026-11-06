@@ -42,7 +42,7 @@ go test ./...
 make ci
 ```
 
-`make ci` runs the build, unit tests, `go vet`, the race detector, `staticcheck`, and `govulncheck`.
+`make ci` runs the build, unit tests, `go vet`, the race detector, `staticcheck`, and `govulncheck`. `make fuzz` runs the Go fuzz targets for config, authorized_keys, RPC, and SFTP option parsing.
 
 ## End-to-end tests
 

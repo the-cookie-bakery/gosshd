@@ -89,8 +89,8 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | PRIV-03 | Session launcher drops uid/gid/groups, applies `no_new_privs`, limits, env, chroot | Partial | No dedicated unit test | Password/key/PTY/SFTP sessions in smoke suite |
 | PRIV-04 | Monitor-side verification of public-key userauth signatures | Done | `VerifiedPublicKeyCallback` re-confirms authorization after signature proof; no vendored patch | Covered indirectly by key and certificate suites |
 | PRIV-05 | Drop monitor capabilities after startup | Done | `internal/privsep/caps.go` drops the bounding set and effective/permitted set across all Go threads; fail-closed when root | `privsep` suite asserts monitor `CapEff`/`CapBnd` and per-thread consistency |
-| PRIV-06 | Worker and session sandboxing (seccomp/Landlock) | Pending | Not implemented | Not covered |
-| PRIV-07 | Bounded RPC protocol hardening and malformed-message handling | Partial | Length-limited framing and fd passing are implemented; no fuzz test | Not covered |
+| PRIV-06 | Worker and session sandboxing (seccomp/Landlock) | Partial | Worker seccomp deny-list with `TSYNC`; session Landlock deferred | All suites pass with the worker sandbox enabled |
+| PRIV-07 | Bounded RPC protocol hardening and malformed-message handling | Done | Length-limited framing, fd passing, and `FuzzPacketDecode`; config and authorized_keys fuzz targets | Not covered |
 | PRIV-08 | Forged worker RPC tests: cannot impersonate another user or open unauthorized sessions | Done | Socket-level tests cover unauthenticated `session_open`, unknown-session operations, malformed payloads, and per-connection state isolation | Worker isolation and capability assertions covered by `privsep` suite |
 | PRIV-09 | Chroot path ownership and component validation | Done | `resolveChroot` expands tokens and rejects relative, missing, symlinked, non-root, or writable components; `chroot_test.go` | Not covered; unit tests cover validation |
 | PRIV-10 | Process cleanup and session reaping under disconnect/timeout | Partial | Basic cleanup implemented | Not covered |
@@ -131,7 +131,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Done | New `interop` suite | `ssh`, `scp`, and `sftp` pass |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Done | `interop` suite rejects direct-tcpip, remote forward, agent, and X11 requests | Passing |
 | E2E-11 | CI workflow running unit tests, vet, and the Podman matrix | Partial | `make ci` runs build, unit, vet, race, staticcheck, and govulncheck; no hosted workflow | Podman matrix remains manual |
-| E2E-12 | Failure artifact retention and container leak checks | Partial | Harness keeps logs/inspect data and supports `GOSSHD_E2E_KEEP=1` | No dedicated test |
+| E2E-12 | Failure artifact retention and container leak checks | Partial | Harness defaults/suffix unit tests; retention behavior remains manual | No leak-check test |
 
 ### 3.7 CLI, operations, and documentation
 
