@@ -448,12 +448,12 @@ func (p *parser) apply(key string, args []string, source string) error {
 			break
 		}
 		if len(args) < 2 {
-			return errors.New("SetEnv requires name and value")
+			return errors.New("setenv requires name and value")
 		}
 		p.cfg.SetEnv[args[0]] = strings.Join(args[1:], " ")
 	case "subsystem":
 		if len(args) < 2 {
-			return errors.New("Subsystem requires name and command")
+			return errors.New("subsystem requires name and command")
 		}
 		p.cfg.Subsystems[args[0]] = strings.Join(args[1:], " ")
 	case "forcecommand":
@@ -514,6 +514,18 @@ func (p *parser) apply(key string, args []string, source string) error {
 		p.cfg.HostKeyAlgorithms = splitComma(args)
 	case "pubkeyacceptedalgorithms", "pubkeyacceptedkeytypes":
 		p.cfg.PubkeyAcceptedAlgorithms = splitComma(args)
+	case "requiredrsasize":
+		v, err := one()
+		if err != nil {
+			return err
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1024 {
+			return fmt.Errorf("invalid RequiredRSASize %q", v)
+		}
+		if p.first(k) {
+			p.cfg.RequiredRSASize = n
+		}
 	case "casignaturealgorithms", "rekeylimit", "fingerprinthash":
 		if k == "rekeylimit" && len(args) > 0 {
 			n, err := parseSize(args[0])
@@ -525,7 +537,7 @@ func (p *parser) apply(key string, args []string, source string) error {
 			}
 		}
 	case "authenticationmethods":
-		return errors.New("AuthenticationMethods is not supported yet")
+		return errors.New("the AuthenticationMethods directive is not supported yet")
 	case "allowusers":
 		p.cfg.AllowUsers = append(p.cfg.AllowUsers, args...)
 	case "denyusers":

@@ -9,8 +9,9 @@ This is an early implementation. The current tree includes:
 - `sshd_config` parsing for the core authentication, session, crypto, and access-control directives
 - explicit modern KEX/cipher/MAC/host-key policy with weak algorithm rejection
 - NSS-aware account lookup and shadow password verification using pure-Go yescrypt/SHA-crypt/bcrypt
-- `authorized_keys` parsing with key options
+- `authorized_keys` parsing with key options and `cert-authority` entries
 - OpenSSH user/host certificate support
+- rate limiting, failure delay, and `RequiredRSASize` enforcement
 - privileged monitor, unprivileged per-connection workers, and per-session launchers
 - PTY, shell, `exec`, environment, signal, resize, and exit-status handling
 - in-process `internal-sftp` and external subsystem support
@@ -40,7 +41,10 @@ CGO_ENABLED=0 go build -trimpath -o bin/gosshd ./cmd/gosshd
 
 ```sh
 go test ./...
+make ci
 ```
+
+`make ci` runs the build, unit tests, `go vet`, the race detector, `staticcheck`, and `govulncheck`.
 
 ## End-to-end tests
 
@@ -55,7 +59,7 @@ Useful environment variables:
 
 ```text
 GOSSHD_E2E_IMAGES=debian,ubuntu,fedora
-GOSSHD_E2E_SUITES=smoke
+GOSSHD_E2E_SUITES=smoke,auth,privsep,config,cert
 GOSSHD_E2E_KEEP=1
 GOSSHD_E2E_REQUIRE=1
 ```

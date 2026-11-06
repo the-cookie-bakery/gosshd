@@ -30,12 +30,11 @@ type Options struct {
 }
 
 type Harness struct {
-	t         testing.TB
-	opts      Options
-	name      string
-	container string
-	started   bool
-	mu        sync.Mutex
+	t       testing.TB
+	opts    Options
+	name    string
+	started bool
+	mu      sync.Mutex
 }
 
 type Result struct {

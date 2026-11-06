@@ -181,6 +181,13 @@ func RunWorker() error {
 		}
 		return resultPerms(res)
 	}
+	serverCfg.VerifiedPublicKeyCallback = func(conn ssh.ConnMetadata, key ssh.PublicKey, permissions *ssh.Permissions, signatureAlgorithm string) (*ssh.Permissions, error) {
+		res, _, err := rpc.call(&Packet{Type: "pubkey_verified", User: conn.User(), Key: key.Marshal(), Algo: signatureAlgorithm, Remote: conn.RemoteAddr().String()})
+		if err != nil {
+			return nil, err
+		}
+		return resultPerms(res)
+	}
 	if cfg.KbdInteractiveAuthentication {
 		serverCfg.KeyboardInteractiveCallback = func(conn ssh.ConnMetadata, client ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 			ans, err := client("", "", []string{"Password: "}, []bool{false})
@@ -309,6 +316,10 @@ func handleSession(conn *ssh.ServerConn, ch ssh.Channel, requests <-chan *ssh.Re
 	for req := range requests {
 		switch req.Type {
 		case "pty-req":
+			if h.perms == nil || h.perms.NoPTY || !cfg.PermitTTY {
+				req.Reply(false, nil)
+				continue
+			}
 			var r ptyRequest
 			if err := ssh.Unmarshal(req.Payload, &r); err != nil {
 				req.Reply(false, nil)

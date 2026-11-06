@@ -6,12 +6,111 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
+
+func (a *Authenticator) lookupAuthorizedCertAuthorities(u *nss.User, cert *ssh.Certificate, remote net.Addr) (*Permissions, bool, error) {
+	if cert.CertType != ssh.UserCert {
+		return nil, false, nil
+	}
+	for _, spec := range a.cfg.AuthorizedKeysFile {
+		if spec == "none" {
+			continue
+		}
+		expanded, err := expandTokens(spec, u)
+		if err != nil {
+			continue
+		}
+		if !filepath.IsAbs(expanded) {
+			expanded = filepath.Join(u.Home, expanded)
+		}
+		if err := secureAuthorizedKeysFile(u, expanded, a.cfg.StrictModes); err != nil {
+			continue
+		}
+		perms, found, err := scanCertAuthorityFile(expanded, cert, u, remote)
+		if err != nil {
+			continue
+		}
+		if found {
+			return perms, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func scanCertAuthorityFile(path string, cert *ssh.Certificate, u *nss.User, remote net.Addr) (*Permissions, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, 64*1024), 512*1024)
+	for scan.Scan() {
+		line := bytes.TrimSpace(scan.Bytes())
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		ca, _, options, _, err := ssh.ParseAuthorizedKey(line)
+		if err != nil {
+			continue
+		}
+		p, err := parseKeyOptions(options, u, remote)
+		if err != nil || !p.CertAuthority {
+			continue
+		}
+		if cert.SignatureKey == nil || !bytes.Equal(ca.Marshal(), cert.SignatureKey.Marshal()) {
+			continue
+		}
+		principals := p.Principals
+		if len(principals) == 0 {
+			principals = []string{u.Name}
+		}
+		checker := &ssh.CertChecker{
+			SupportedCriticalOptions: []string{"force-command", "source-address"},
+			IsUserAuthority: func(auth ssh.PublicKey) bool {
+				return bytes.Equal(ca.Marshal(), auth.Marshal())
+			},
+		}
+		valid := false
+		for _, principal := range principals {
+			if checker.CheckCert(principal, cert) == nil {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			continue
+		}
+		perms, err := certificatePermissions(cert, remote)
+		if err != nil {
+			continue
+		}
+		if p.ForceCommand != "" {
+			perms.ForceCommand = p.ForceCommand
+		}
+		if p.NoPTY {
+			perms.NoPTY = true
+		}
+		if p.NoUserRC {
+			perms.NoUserRC = true
+		}
+		perms.Environment = append(perms.Environment, p.Environment...)
+		return perms, true, nil
+	}
+	if err := scan.Err(); err != nil {
+		return nil, false, err
+	}
+	return nil, false, nil
+}
 
 func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, remote net.Addr) (*Permissions, error) {
 	if cert.CertType != ssh.UserCert {
@@ -66,6 +165,10 @@ func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, re
 	if err := checker.CheckCert(principal, cert); err != nil {
 		return nil, ErrAccessDenied
 	}
+	return certificatePermissions(cert, remote)
+}
+
+func certificatePermissions(cert *ssh.Certificate, remote net.Addr) (*Permissions, error) {
 	p := &Permissions{KeyOptions: map[string]string{}}
 	if v := cert.CriticalOptions["force-command"]; v != "" {
 		p.ForceCommand = v
@@ -81,9 +184,6 @@ func (a *Authenticator) lookupCertificate(u *nss.User, cert *ssh.Certificate, re
 	}
 	if _, ok := cert.Extensions["permit-user-rc"]; !ok {
 		p.NoUserRC = true
-	}
-	if v := cert.Extensions["permit-X11-forwarding"]; v != "" {
-		_ = v
 	}
 	return p, nil
 }

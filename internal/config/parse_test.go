@@ -104,6 +104,22 @@ func TestRejectsNegativeLoginGraceTime(t *testing.T) {
 	}
 }
 
+func TestRequiredRSASize(t *testing.T) {
+	cfg, err := ParseReader(strings.NewReader("RequiredRSASize 3072\n"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RequiredRSASize != 3072 {
+		t.Fatalf("RequiredRSASize=%d", cfg.RequiredRSASize)
+	}
+	if Default().RequiredRSASize != 2048 {
+		t.Fatalf("default RequiredRSASize=%d", Default().RequiredRSASize)
+	}
+	if _, err := ParseReader(strings.NewReader("RequiredRSASize 512\n"), "test"); err == nil {
+		t.Fatal("expected undersized RequiredRSASize to be rejected")
+	}
+}
+
 func TestAcceptsZeroLoginGraceTime(t *testing.T) {
 	cfg, err := ParseReader(strings.NewReader("LoginGraceTime 0\n"), "test")
 	if err != nil {

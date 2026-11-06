@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +15,11 @@ import (
 
 	"github.com/cookiengineer/gosshd/internal/config"
 	"github.com/cookiengineer/gosshd/internal/nss"
+)
+
+const (
+	maxPasswordLength = 1024
+	dummyPasswordHash = "$y$j75$z7ztFz2FayrKI79/jEwlL.$u5x/j193MQ09wbFaRGYr0AH/A/jh3kunjuhYRVRNkmC"
 )
 
 var (
@@ -72,8 +78,12 @@ func (a *Authenticator) Lookup(username string, remote net.Addr) (*nss.User, err
 }
 
 func (a *Authenticator) Password(username string, password []byte, remote net.Addr) (*Permissions, error) {
+	if len(password) > maxPasswordLength {
+		return nil, ErrInvalidLogin
+	}
 	u, err := a.Lookup(username, remote)
 	if err != nil {
+		a.dummyVerify(password)
 		return nil, err
 	}
 	if err := a.checkRootLogin(u, "password", false); err != nil {
@@ -88,7 +98,7 @@ func (a *Authenticator) Password(username string, password []byte, remote net.Ad
 	}
 	now := time.Now()
 	days := now.Unix() / 86400
-	if sh.Expire > 0 && days >= sh.Expire {
+	if sh.Expire >= 0 && days >= sh.Expire {
 		return nil, ErrAccountExpired
 	}
 	if sh.LastChange >= 0 && sh.Max >= 0 && sh.Max > 0 && days > sh.LastChange+sh.Max+max64(sh.Inact, 0) {
@@ -133,6 +143,9 @@ func (a *Authenticator) PublicKey(username string, key ssh.PublicKey, remote net
 	if !a.cfg.PubkeyAuthentication {
 		return nil, ErrAccessDenied
 	}
+	if err := checkRSASize(key, a.cfg.RequiredRSASize); err != nil {
+		return nil, err
+	}
 	p, err := a.lookupAuthorizedKey(u, key, remote)
 	if err != nil {
 		return nil, err
@@ -150,6 +163,35 @@ func (a *Authenticator) PublicKey(username string, key ssh.PublicKey, remote net
 	p.Home = u.Home
 	p.Shell = u.Shell
 	return p, nil
+}
+
+func (a *Authenticator) dummyVerify(password []byte) {
+	digest, err := a.decoder.Decode(dummyPasswordHash)
+	if err != nil {
+		return
+	}
+	_, _ = digest.MatchAdvanced(string(password))
+}
+
+func checkRSASize(key ssh.PublicKey, minimum int) error {
+	if minimum <= 0 {
+		return nil
+	}
+	if cert, ok := key.(*ssh.Certificate); ok {
+		key = cert.Key
+	}
+	cpk, ok := key.(ssh.CryptoPublicKey)
+	if !ok {
+		return nil
+	}
+	pub, ok := cpk.CryptoPublicKey().(*rsa.PublicKey)
+	if !ok {
+		return nil
+	}
+	if pub.N.BitLen() < minimum {
+		return ErrAccessDenied
+	}
+	return nil
 }
 
 func (a *Authenticator) checkRootLogin(u *nss.User, method string, forced bool) error {

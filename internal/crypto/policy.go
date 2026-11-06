@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"fmt"
 	"os"
 	"strings"
@@ -67,9 +68,9 @@ var insecure = map[string]bool{
 	ssh.InsecureHMACSHA196:           true,
 	ssh.HMACSHA1:                     true,
 	ssh.KeyAlgoRSA:                   true,
-	ssh.InsecureKeyAlgoDSA:           true,
+	"ssh-dss":                        true,
 	ssh.CertAlgoRSAv01:               true,
-	ssh.InsecureCertAlgoDSAv01:       true,
+	"ssh-dss-cert-v01@openssh.com":   true,
 }
 
 var knownModern = func() map[string]bool {
@@ -130,6 +131,12 @@ func Apply(cfg *config.Config) error {
 	} else if err := check(cfg.PubkeyAcceptedAlgorithms, "PubkeyAcceptedAlgorithms"); err != nil {
 		return err
 	}
+	if cfg.RequiredRSASize == 0 {
+		cfg.RequiredRSASize = 2048
+	}
+	if cfg.RequiredRSASize < 1024 {
+		return fmt.Errorf("RequiredRSASize must be at least 1024")
+	}
 	return nil
 }
 
@@ -145,7 +152,7 @@ func check(values []string, name string) error {
 	return nil
 }
 
-func LoadHostSigners(paths []string, certPaths []string, allowed []string) ([]ssh.Signer, error) {
+func LoadHostSigners(paths []string, certPaths []string, allowed []string, requiredRSASize int) ([]ssh.Signer, error) {
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("no host keys configured")
 	}
@@ -163,6 +170,9 @@ func LoadHostSigners(paths []string, certPaths []string, allowed []string) ([]ss
 		signer, err := ssh.ParsePrivateKey(raw)
 		if err != nil {
 			return nil, fmt.Errorf("parse host key %s: %w", path, err)
+		}
+		if err := checkRSASize(signer.PublicKey(), requiredRSASize); err != nil {
+			return nil, fmt.Errorf("host key %s: %w", path, err)
 		}
 		signer, err = restrictSigner(signer, allowedSet)
 		if err != nil {
@@ -204,6 +214,27 @@ func LoadHostSigners(paths []string, certPaths []string, allowed []string) ([]ss
 		return nil, fmt.Errorf("no usable host keys")
 	}
 	return signers, nil
+}
+
+func checkRSASize(key ssh.PublicKey, minimum int) error {
+	if minimum <= 0 {
+		return nil
+	}
+	if cert, ok := key.(*ssh.Certificate); ok {
+		key = cert.Key
+	}
+	cpk, ok := key.(ssh.CryptoPublicKey)
+	if !ok {
+		return nil
+	}
+	pub, ok := cpk.CryptoPublicKey().(*rsa.PublicKey)
+	if !ok {
+		return nil
+	}
+	if pub.N.BitLen() < minimum {
+		return fmt.Errorf("RSA key is %d bits, minimum is %d", pub.N.BitLen(), minimum)
+	}
+	return nil
 }
 
 func restrictSigner(signer ssh.Signer, allowed map[string]bool) (ssh.Signer, error) {

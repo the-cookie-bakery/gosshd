@@ -133,7 +133,7 @@ func run(args []string) int {
 			}
 		}
 	}
-	signers, err := crypto.LoadHostSigners(cfg.HostKeys, cfg.HostCertificates, cfg.HostKeyAlgorithms)
+	signers, err := crypto.LoadHostSigners(cfg.HostKeys, cfg.HostCertificates, cfg.HostKeyAlgorithms, cfg.RequiredRSASize)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

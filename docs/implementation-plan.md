@@ -163,6 +163,8 @@ Implemented checks include:
 - `MaxAuthTries`, `MaxSessions`, `MaxStartups` connection cap
 - `LoginGraceTime` via a connection deadline covering the handshake and authentication
 - keyboard-interactive gated by `KbdInteractiveAuthentication`
+- password length cap, dummy-hash verification for unknown users, jittered failure delay, and a fixed per-IP failure limiter
+- `RequiredRSASize` (default 2048) for host, user, and certificate RSA keys
 
 ### Public-key authentication
 
@@ -171,7 +173,7 @@ Implemented checks include:
 3. Worker verifies the userauth signature using x/crypto.
 4. Monitor returns effective permissions: forced command, source restriction, environment restrictions, no-PTY, no-user-rc, and similar options.
 
-The worker's x/crypto server verifies the userauth signature before authentication succeeds, so monitor-side authorization before signature verification is not a security hole. Current x/crypto (v0.58+) also exposes `VerifiedPublicKeyCallback` and `PartialSuccessError`; adopting `VerifiedPublicKeyCallback` would let the monitor make signature-aware decisions without vendoring a patch.
+The worker's x/crypto server verifies the userauth signature before authentication succeeds. gosshd also uses `VerifiedPublicKeyCallback` to re-confirm authorization after signature proof, so no vendored x/crypto patch is required. `PartialSuccessError` is available for future `AuthenticationMethods` composition.
 
 ## 6. Configuration compatibility target
 
@@ -179,7 +181,7 @@ The parser currently supports:
 
 - comments, blank lines, quoted arguments, and first-value-wins semantics
 - `Include` with glob expansion and recursion protection
-- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives
+- common network, host-key, crypto, authentication, access, session, subsystem, and logging directives, including `RequiredRSASize`
 - explicit rejection of unknown keywords
 - explicit rejection of directives that try to re-enable weak cryptography
 
@@ -230,9 +232,9 @@ Implemented:
 Remaining hardening:
 
 - drop monitor capabilities after startup
-- adopt `VerifiedPublicKeyCallback` for monitor-side, signature-aware authorization (no vendored patch needed)
 - add worker/session seccomp or Landlock profiles
-- add monitor-side rate limiting and authentication penalties
+- extend forged-RPC coverage to a socket-level harness
+- add shadow/host-key access-denial assertions to the privsep suite
 - add fuzzing for RPC, config, authorized_keys, certificates, and SFTP
 
 ## 9. End-to-end test harness
@@ -244,7 +246,7 @@ e2e-tests/
 ├── e2e_test.go
 ├── harness/
 ├── images/{debian,ubuntu,fedora}/Containerfile
-├── suites/smoke/
+├── suites/{smoke,auth,privsep,config,cert}/
 └── testdata/
 ```
 
@@ -258,13 +260,13 @@ The host-side driver:
 6. Collects logs and diagnostics on failure.
 7. Removes containers unless `GOSSHD_E2E_KEEP=1`.
 
-The smoke suite currently verifies:
+Suites verify:
 
-- password authentication against a real shadow entry
-- public-key authentication through `authorized_keys`
-- command execution and exit status
-- PTY request and execution
-- internal SFTP file write/read
+- `smoke`: password/public-key auth, exec, PTY, concurrent sessions, signals, internal SFTP
+- `auth`: wrong password, locked/expired/unknown accounts, allow/deny users, authorized_keys options, disabled auth methods, keyboard-interactive gating
+- `privsep`: worker and session uid separation
+- `config`: Include/recursion, weak algorithms, unknown keywords, `AuthenticationMethods` rejection, `-T` defaults
+- `cert`: trusted user CA, principals file, revocation, `cert-authority` in `authorized_keys`, certificate force-command, host certificates
 - Debian, Ubuntu, and Fedora containers
 
 ## 10. Phase plan and status

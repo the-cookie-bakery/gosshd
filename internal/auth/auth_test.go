@@ -1,9 +1,18 @@
 package auth
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"golang.org/x/crypto/ssh"
+
+	"github.com/cookiengineer/gosshd/internal/config"
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
 
@@ -56,5 +65,114 @@ func TestMatchUserHost(t *testing.T) {
 	}
 	if matchUserHost("bob", "alice", addr) {
 		t.Fatal("unexpected match")
+	}
+}
+
+func TestPasswordLengthLimit(t *testing.T) {
+	a, err := New(config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Password("someone", make([]byte, maxPasswordLength+1), nil); err != ErrInvalidLogin {
+		t.Fatalf("got %v, want ErrInvalidLogin", err)
+	}
+}
+
+func TestCheckRSASize(t *testing.T) {
+	small, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	large, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	smallPub, err := ssh.NewPublicKey(&small.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	largePub, err := ssh.NewPublicKey(&large.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRSASize(smallPub, 2048); err == nil {
+		t.Fatal("expected small RSA key to be rejected")
+	}
+	if err := checkRSASize(largePub, 2048); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRSASize(largePub, 1024); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAuthorizedKeysCertAuthority(t *testing.T) {
+	dir := t.TempDir()
+	caPub, caPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshCAPub, err := ssh.NewPublicKey(caPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshUserPub, err := ssh.NewPublicKey(userPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := &ssh.Certificate{
+		Key:             sshUserPub,
+		CertType:        ssh.UserCert,
+		ValidPrincipals: []string{"test"},
+		ValidAfter:      uint64(time.Now().Add(-time.Minute).Unix()),
+		ValidBefore:     uint64(time.Now().Add(time.Hour).Unix()),
+	}
+	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "authorized_keys")
+	line := append([]byte(`cert-authority,principals="test" `), ssh.MarshalAuthorizedKey(sshCAPub)...)
+	if err := os.WriteFile(path, line, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.AuthorizedKeysFile = []string{path}
+	cfg.StrictModes = false
+	a, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := &nss.User{Name: "test", Home: dir}
+	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.1")}
+	perms, err := a.lookupAuthorizedKey(u, cert, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perms == nil {
+		t.Fatal("expected permissions")
+	}
+
+	cert.ValidPrincipals = []string{"other"}
+	bad := *cert
+	if _, err := a.lookupAuthorizedKey(u, &bad, remote); err == nil {
+		t.Fatal("expected mismatched principal to be rejected")
+	}
+}
+
+func TestDummyPasswordHashIsValid(t *testing.T) {
+	a, err := New(config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.decoder.Decode(dummyPasswordHash); err != nil {
+		t.Fatalf("dummy hash does not decode: %v", err)
 	}
 }

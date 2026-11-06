@@ -25,12 +25,13 @@ Current verification commands:
 ```sh
 go test ./...
 go vet ./...
+make ci
 go test -tags=e2e -count=1 -timeout=30m ./e2e-tests
 ```
 
 Current E2E images: Debian, Ubuntu, Fedora.
 
-Current E2E suites: `smoke`.
+Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 
 ## 3. Open and partial tasks
 
@@ -56,7 +57,7 @@ Current E2E suites: `smoke`.
 | CRY-02 | Host-key and host-certificate loading with key-type restriction | Done | `TestLoadHostSigners` | Ed25519 host key used in smoke suite |
 | CRY-03 | Prevent RSA host keys from advertising legacy `ssh-rsa` in worker `KEXINIT` | Partial | Monitor restricts RSA signer algorithms; worker remote signer still advertises the key type list from x/crypto | Not covered; requires an RSA host-key smoke test |
 | CRY-04 | Ed448 support from RFC 8709 | Pending | x/crypto does not implement Ed448 | Not covered |
-| CRY-05 | RSA minimum-size enforcement and warnings | Partial | No dedicated test | Not covered |
+| CRY-05 | RSA minimum-size enforcement and warnings | Done | `RequiredRSASize` defaults to 2048; enforced for host, user, and certificate keys; `TestLoadHostSignersRSAMinimum`, `TestCheckRSASize` | Not covered |
 | CRY-06 | FIPS 140-3 mode verification | Pending | No test | Not covered |
 
 ### 3.3 Authentication, accounts, and access control
@@ -66,17 +67,17 @@ Current E2E suites: `smoke`.
 | AUTH-01 | NSS-aware account lookup through libc `getpwnam` with file fallback | Done | `user.Lookup` fallback and container verification | Password/key sessions as real container users |
 | AUTH-02 | NSS-aware shadow lookup through libc `getspnam` with file fallback | Done | Container verification | Password login in smoke suite |
 | AUTH-03 | Password hash verification: yescrypt, SHA-512 crypt, SHA-256 crypt, bcrypt | Done | `go-crypt` decoder path; no dedicated vector table yet | Password login in smoke suite; hash variants need E2E cases |
-| AUTH-04 | Reject locked, expired, inactive, missing, and weak-hash accounts | Partial | Account checks implemented; no dedicated unit tests | Not covered; negative auth E2E needed |
-| AUTH-05 | `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups`, `PermitRootLogin`, `/etc/nologin` | Partial | `TestMatchUserHost` covers pattern matching only | Not covered |
+| AUTH-04 | Reject locked, expired, inactive, missing, and weak-hash accounts | Done | Account checks implemented; auth suite covers locked, expired, unknown, and wrong-password cases | `auth` suite covers locked, expired, and unknown accounts |
+| AUTH-05 | `AllowUsers`, `DenyUsers`, `AllowGroups`, `DenyGroups`, `PermitRootLogin`, `/etc/nologin` | Partial | `TestMatchUserHost` covers pattern matching; allow/deny user E2E added | `auth` suite covers AllowUsers/DenyUsers; groups, PermitRootLogin, and `/etc/nologin` still uncovered |
 | AUTH-06 | `authorized_keys` parsing and key options (`from`, `command`, `environment`, `no-pty`, `restrict`, `expiry-time`, `no-touch-required`) | Done | `TestParseKeyOptions`, `TestParseKeyOptionsRejectsUnknown`, `TestSourceAllowed`, `TestExpandTokens` | Public-key login in smoke suite; option enforcement E2E pending |
-| AUTH-07 | `authorized_keys` certificate-authority entries (`cert-authority`, `principals=`) | Pending | Option is parsed but not used by the lookup path | Not covered |
-| AUTH-08 | `TrustedUserCAKeys`, `AuthorizedPrincipalsFile`, `RevokedKeys`, host certificates | Partial | No certificate unit tests | Not covered in E2E |
+| AUTH-07 | `authorized_keys` certificate-authority entries (`cert-authority`, `principals=`) | Done | CA lines are matched against the certificate signing key with principal restrictions; `TestAuthorizedKeysCertAuthority` | `cert` suite covers success and wrong-principal rejection |
+| AUTH-08 | `TrustedUserCAKeys`, `AuthorizedPrincipalsFile`, `RevokedKeys`, host certificates | Done | Certificate paths exercised by the `cert` suite | `cert` suite covers trusted CA, principals file, revocation, and host certificates |
 | AUTH-09 | Certificate critical options and extensions parity | Partial | Supports basic `force-command`, `source-address`, `permit-pty`, `permit-user-rc` checks | Not covered |
-| AUTH-10 | Password failure delay, rate limiting, and user-enumeration resistance | Pending | No tests | Not covered |
-| AUTH-11 | Password length limits and timing-safe comparison audit | Partial | Crypt library comparison used; no explicit limit or test | Not covered |
+| AUTH-10 | Password failure delay, rate limiting, and user-enumeration resistance | Done | Dummy-hash verification, jittered failure delay, and fixed per-IP limiter; `TestAuthLimiterDelay` | Negative auth attempts exercise the paths; timing itself is not asserted |
+| AUTH-11 | Password length limits and timing-safe comparison audit | Done | 1024-byte limit enforced before lookup; `TestPasswordLengthLimit`; crypt library comparison | Not covered |
 | AUTH-12 | PAM backend for account/session policy and MFA | Deferred | Backend interface exists; no PAM implementation | Not covered |
 | AUTH-13 | Keyboard-interactive backed by password crypt path, gated by `KbdInteractiveAuthentication` | Done | Worker callback registered only when enabled; monitor rejects disabled requests; no dedicated test | Not covered; smoke suite uses password method |
-| AUTH-14 | Authentication negative test matrix: wrong password, locked, expired, denied user, denied group, bad key options | Pending | None | Needed |
+| AUTH-14 | Authentication negative test matrix: wrong password, locked, expired, denied user, denied group, bad key options | Done | New `auth` suite | Passing on Debian; matrix runs on all images |
 | AUTH-15 | `LoginGraceTime` connection deadline covering handshake and authentication | Done | Parse validation for negative values; no deadline unit test | Not covered |
 
 ### 3.4 Privilege separation and process hardening
@@ -86,12 +87,12 @@ Current E2E suites: `smoke`.
 | PRIV-01 | Privileged monitor, unprivileged per-connection worker, per-session launcher | Done | Manual process inspection in container | Sessions run as target user in smoke suite; E2E does not yet assert worker uid separation |
 | PRIV-02 | Host private keys stay in monitor; host-key signing over RPC | Done | No dedicated unit test | Host-key handshake succeeds in smoke suite |
 | PRIV-03 | Session launcher drops uid/gid/groups, applies `no_new_privs`, limits, env, chroot | Partial | No dedicated unit test | Password/key/PTY/SFTP sessions in smoke suite |
-| PRIV-04 | Monitor-side verification of public-key userauth signatures | Pending | Not a security blocker: the worker's x/crypto server verifies the signature before auth succeeds. x/crypto v0.58+ provides `VerifiedPublicKeyCallback`; adoption pending, no vendored patch needed | Not covered |
+| PRIV-04 | Monitor-side verification of public-key userauth signatures | Done | `VerifiedPublicKeyCallback` re-confirms authorization after signature proof; no vendored patch | Covered indirectly by key and certificate suites |
 | PRIV-05 | Drop monitor capabilities after startup | Pending | Not implemented | Not covered |
 | PRIV-06 | Worker and session sandboxing (seccomp/Landlock) | Pending | Not implemented | Not covered |
 | PRIV-07 | Bounded RPC protocol hardening and malformed-message handling | Partial | Length-limited framing and fd passing are implemented; no fuzz test | Not covered |
-| PRIV-08 | Forged worker RPC tests: cannot impersonate another user or open unauthorized sessions | Pending | None | Needed |
-| PRIV-09 | Chroot path ownership and component validation | Pending | Only configured chroot is applied | Not covered |
+| PRIV-08 | Forged worker RPC tests: cannot impersonate another user or open unauthorized sessions | Partial | `TestForgedSessionRequestsRejected` covers unauthenticated/unknown-session RPCs; no socket-level forgery harness | Worker uid separation covered by `privsep` suite |
+| PRIV-09 | Chroot path ownership and component validation | Done | `resolveChroot` expands tokens and rejects relative, missing, symlinked, non-root, or writable components; `chroot_test.go` | Not covered; unit tests cover validation |
 | PRIV-10 | Process cleanup and session reaping under disconnect/timeout | Partial | Basic cleanup implemented | Not covered |
 | PRIV-11 | Concurrent RPC dispatch without head-of-line blocking | Done | `handleConn` dispatches packets on goroutines, session state is mutex-guarded, cleanup drains handlers; race tests pass | Concurrent-session and signal smoke regressions added |
 
@@ -123,13 +124,13 @@ Current E2E suites: `smoke`.
 | E2E-02 | Podman harness manages image build, container lifecycle, exec, logs, diagnostics, cleanup | Done | No harness unit tests | Used by every E2E run |
 | E2E-03 | Debian, Ubuntu, Fedora images with SSH client, shadow tools, and runtime utilities | Done | Image builds verified | Smoke suite passes on all three |
 | E2E-04 | Smoke suite: password auth, key auth, exec, PTY, internal SFTP | Done | N/A | Passing on Debian, Ubuntu, Fedora |
-| E2E-05 | Authentication negative matrix: wrong password, locked/expired, denied users/groups, bad key options | Pending | None | Needed |
-| E2E-06 | Certificate E2E: host cert, user cert, principals, revocation, certificate key options | Pending | None | Needed |
-| E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Pending | None | Needed |
-| E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Pending | None | Needed |
+| E2E-05 | Authentication negative matrix: wrong password, locked/expired, denied users/groups, bad key options | Done | New `auth` suite | Passing |
+| E2E-06 | Certificate E2E: host cert, user cert, principals, revocation, certificate key options | Done | New `cert` suite | Passing |
+| E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Partial | New `config` suite covers Include/recursion, weak algorithms, unknown keywords, AuthenticationMethods rejection, and `-T` | Match still pending |
+| E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Partial | New `privsep` suite asserts worker and session uid separation; forged RPC unit tests added | Shadow/host-key access denial and socket-level forgery still pending |
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Pending | None | Needed |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Pending | None | Needed |
-| E2E-11 | CI workflow running unit tests, vet, and the Podman matrix | Pending | No CI configuration | Needed |
+| E2E-11 | CI workflow running unit tests, vet, and the Podman matrix | Partial | `make ci` runs build, unit, vet, race, staticcheck, and govulncheck; no hosted workflow | Podman matrix remains manual |
 | E2E-12 | Failure artifact retention and container leak checks | Partial | Harness keeps logs/inspect data and supports `GOSSHD_E2E_KEEP=1` | No dedicated test |
 
 ### 3.7 CLI, operations, and documentation
@@ -170,10 +171,9 @@ The following areas are implemented and have at least smoke or unit verification
 
 ### Milestone A: security-critical corrections
 
-1. Adopt `VerifiedPublicKeyCallback` for signature-aware monitor authorization (no vendored patch required).
-2. Add monitor capability dropping and worker/session sandboxing.
-3. Add forged-RPC and worker-isolation tests.
-4. Add public-key negative tests and certificate E2E coverage.
+1. Add monitor capability dropping and worker/session sandboxing.
+2. Extend forged-RPC coverage to a socket-level forgery harness.
+3. Add shadow/host-key access-denial assertions to the `privsep` suite.
 
 ### Milestone B: configuration compatibility
 
@@ -193,3 +193,19 @@ The following areas are implemented and have at least smoke or unit verification
 1. Implement the `PasswordVerifier` PAM backend behind the existing interface.
 2. Add PAM account and session management.
 3. Add PAM-specific E2E coverage for MFA, account policy, and session modules.
+
+## 6. Priority mapping
+
+The v1 definition of done refers to P0/P1 work. Status rows do not carry a priority column; the mapping below is authoritative.
+
+### P0: release blockers
+
+`AUTH-10`, `AUTH-11`, `AUTH-14`, `CFG-03`, `CFG-06`, `CRY-01`, `CRY-02`, `PRIV-05`, `PRIV-06`, `PRIV-08`, `PRIV-09`, `SESS-08`, `SESS-09`, `OPS-08`, `E2E-09`, `E2E-10`, `E2E-11`
+
+### P1: v1 scope
+
+`AUTH-04`, `AUTH-05`, `AUTH-07`, `AUTH-08`, `AUTH-09`, `CFG-04`, `CFG-05`, `CFG-07`, `CFG-08`, `CFG-09`, `CRY-03`, `CRY-05`, `PRIV-04`, `PRIV-07`, `PRIV-10`, `SESS-04`, `SESS-05`, `SESS-06`, `SESS-07`, `SESS-10`, `SESS-11`, `SFTP-02`, `SFTP-03`, `SFTP-04`, `E2E-07`, `E2E-08`, `E2E-12`, `OPS-02`, `OPS-03`, `OPS-04`, `OPS-05`, `OPS-07`
+
+### P2 and deferred
+
+`AUTH-12` (PAM, deferred), `CRY-04` (Ed448, blocked upstream), `CRY-06` (FIPS, depends on Go FIPS support). All remaining unlisted items are P2.

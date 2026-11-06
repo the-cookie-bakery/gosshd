@@ -15,15 +15,16 @@ import (
 func TestE2E(t *testing.T) {
 	harness.RequirePodman(t)
 	root := repoRoot(t)
-	artifacts := harness.BuildArtifacts(t, harness.Options{RepoRoot: root}, []string{"smoke"})
 	images := os.Getenv("GOSSHD_E2E_IMAGES")
 	if images == "" {
 		images = "debian,ubuntu,fedora"
 	}
 	suites := os.Getenv("GOSSHD_E2E_SUITES")
 	if suites == "" {
-		suites = "smoke"
+		suites = "smoke,auth,privsep,config,cert"
 	}
+	suiteNames := splitList(suites)
+	artifacts := harness.BuildArtifacts(t, harness.Options{RepoRoot: root}, suiteNames)
 	for _, imageName := range strings.Split(images, ",") {
 		imageName = strings.TrimSpace(imageName)
 		if imageName == "" {
@@ -33,11 +34,7 @@ func TestE2E(t *testing.T) {
 		if !strings.Contains(image, ":") {
 			image = "gosshd-e2e-" + imageName + ":local"
 		}
-		for _, suite := range strings.Split(suites, ",") {
-			suite = strings.TrimSpace(suite)
-			if suite == "" {
-				continue
-			}
+		for _, suite := range suiteNames {
 			t.Run(imageName+"/"+suite, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 				defer cancel()
@@ -79,6 +76,17 @@ func repoRoot(t *testing.T) string {
 	}
 	t.Fatal("repo root not found")
 	return ""
+}
+
+func splitList(raw string) []string {
+	var out []string
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func parent(p string) string {

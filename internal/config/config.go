@@ -64,6 +64,7 @@ type Config struct {
 	MACs                     []string
 	HostKeyAlgorithms        []string
 	PubkeyAcceptedAlgorithms []string
+	RequiredRSASize          int
 	RekeyLimit               int64
 
 	AuthenticationMethods []string
@@ -98,6 +99,7 @@ func Default() *Config {
 		AuthorizedKeysFile:           []string{".ssh/authorized_keys", ".ssh/authorized_keys2"},
 		SetEnv:                       map[string]string{},
 		Subsystems:                   map[string]string{},
+		RequiredRSASize:              2048,
 		ClientAliveCountMax:          3,
 		TCPKeepAlive:                 true,
 	}

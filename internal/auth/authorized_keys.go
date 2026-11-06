@@ -19,8 +19,15 @@ import (
 )
 
 func (a *Authenticator) lookupAuthorizedKey(u *nss.User, key ssh.PublicKey, remote net.Addr) (*Permissions, error) {
-	if _, ok := key.(*ssh.Certificate); ok {
-		return a.lookupCertificate(u, key.(*ssh.Certificate), remote)
+	if cert, ok := key.(*ssh.Certificate); ok {
+		perms, found, err := a.lookupAuthorizedCertAuthorities(u, cert, remote)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return perms, nil
+		}
+		return a.lookupCertificate(u, cert, remote)
 	}
 	for _, spec := range a.cfg.AuthorizedKeysFile {
 		if spec == "none" {

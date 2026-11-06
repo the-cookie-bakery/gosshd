@@ -2,9 +2,11 @@ GO ?= go
 CGO_ENABLED ?= 0
 E2E_IMAGES ?= debian,ubuntu,fedora
 E2E_IMAGE_LIST ?= debian ubuntu fedora
-E2E_SUITES ?= smoke
+E2E_SUITES ?= smoke,auth,privsep,config,cert
+STATICCHECK_VERSION ?= latest
+GOVULNCHECK_VERSION ?= latest
 
-.PHONY: build test unit e2e e2e-images e2e-clean fmt vet tidy
+.PHONY: build test unit e2e e2e-images e2e-clean fmt vet tidy race staticcheck govulncheck ci
 
 build:
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -o bin/gosshd ./cmd/gosshd
@@ -14,11 +16,22 @@ test: unit
 unit:
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) test ./...
 
+race:
+	CGO_ENABLED=1 $(GO) test -race -count=1 ./...
+
 fmt:
 	gofmt -w cmd internal e2e-tests
 
 vet:
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) vet ./...
+
+staticcheck:
+	$(GO) run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
+
+govulncheck:
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+ci: build unit vet race staticcheck govulncheck
 
 tidy:
 	$(GO) mod tidy

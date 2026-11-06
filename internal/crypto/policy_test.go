@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -69,14 +70,37 @@ func TestLoadHostSigners(t *testing.T) {
 	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	signers, err := LoadHostSigners([]string{path}, nil, []string{ssh.KeyAlgoED25519})
+	signers, err := LoadHostSigners([]string{path}, nil, []string{ssh.KeyAlgoED25519}, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(signers) != 1 || signers[0].PublicKey().Type() != ssh.KeyAlgoED25519 {
 		t.Fatalf("unexpected signers: %v", signers)
 	}
-	if _, err := LoadHostSigners([]string{path}, nil, []string{ssh.KeyAlgoRSA}); err == nil {
+	if _, err := LoadHostSigners([]string{path}, nil, []string{ssh.KeyAlgoRSA}, 2048); err == nil {
 		t.Fatal("expected disallowed host key to fail")
+	}
+}
+
+func TestLoadHostSignersRSAMinimum(t *testing.T) {
+	dir := t.TempDir()
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKey(key, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "host_rsa")
+	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	allowed := []string{ssh.KeyAlgoRSASHA256}
+	if _, err := LoadHostSigners([]string{path}, nil, allowed, 2048); err == nil {
+		t.Fatal("expected 1024-bit RSA host key to be rejected")
+	}
+	if _, err := LoadHostSigners([]string{path}, nil, allowed, 1024); err != nil {
+		t.Fatalf("expected 1024-bit RSA host key to be accepted: %v", err)
 	}
 }

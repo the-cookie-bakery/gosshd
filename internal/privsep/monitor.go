@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"golang.org/x/crypto/ssh"
@@ -63,7 +64,6 @@ type session struct {
 	exit        int
 	signal      string
 	waitErr     error
-	counted     bool
 }
 
 func (s *session) closeMaster() {
@@ -145,13 +145,14 @@ type Monitor struct {
 	workerUID uint32
 	workerGID uint32
 	drop      bool
+	limiter   *authLimiter
 	startups  chan struct{}
 	listeners []net.Listener
 	wg        sync.WaitGroup
 }
 
 func NewMonitor(cfg *config.Config, a *auth.Authenticator, signers []ssh.Signer) *Monitor {
-	m := &Monitor{cfg: cfg, auth: a, signers: signers, startups: make(chan struct{}, maxInt(cfg.MaxStartups, 1))}
+	m := &Monitor{cfg: cfg, auth: a, signers: signers, limiter: newAuthLimiter(), startups: make(chan struct{}, maxInt(cfg.MaxStartups, 1))}
 	if os.Geteuid() == 0 {
 		if u, err := nss.LookupUser("nobody"); err == nil {
 			m.workerUID = u.UID
@@ -371,16 +372,23 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if p.Type == "keyboard" && !m.cfg.KbdInteractiveAuthentication {
 			return &Result{Error: "keyboard-interactive authentication disabled"}
 		}
+		host := remoteHost(p.Remote)
+		if delay := m.limiter.delay(host); delay > 0 {
+			time.Sleep(delay)
+		}
 		perms, err := m.auth.Password(p.User, p.Password, remoteFromString(p.Remote))
 		for i := range p.Password {
 			p.Password[i] = 0
 		}
 		if err != nil {
+			m.limiter.failure(host)
+			authFailureSleep()
 			return &Result{Error: err.Error()}
 		}
+		m.limiter.success(host)
 		st.setPerms(perms)
 		return &Result{OK: true, Permissions: perms}
-	case "pubkey_authorize":
+	case "pubkey_authorize", "pubkey_verified":
 		if !m.cfg.PubkeyAuthentication {
 			return &Result{Error: "public key authentication disabled"}
 		}
@@ -481,12 +489,16 @@ func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Pack
 			return "", errors.New("unknown subsystem")
 		}
 	}
+	chroot, err := resolveChroot(m.cfg.ChrootDirectory, perms)
+	if err != nil {
+		return "", err
+	}
 	env := m.buildEnv(p.Env, perms)
 	spec := SessionSpec{
 		UID: perms.UID, GID: perms.GID, Groups: nil,
 		Home: perms.Home, Shell: perms.Shell,
 		Command: command, Subsystem: subsystem, SubsystemCommand: m.cfg.Subsystems[subsystem],
-		Chroot: m.cfg.ChrootDirectory, Env: env,
+		Chroot: chroot, Env: env,
 		Remote: p.Remote, NoUserRC: perms.NoUserRC || !m.cfg.PermitUserRC,
 		Pty: p.Pty,
 	}
