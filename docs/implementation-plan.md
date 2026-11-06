@@ -202,6 +202,7 @@ The session layer supports:
 - client-alive keepalives, TCP keepalive, `keepalive@openssh.com`, and `no-more-sessions@openssh.com`
 - environment filtering through `AcceptEnv`, `SetEnv`, and `PermitUserEnvironment`
 - `~/.ssh/rc` / `/etc/ssh/sshrc`, MOTD, last-login rendering, and `SSH_CLIENT`/`SSH_CONNECTION`
+- inetd mode, systemd socket activation, policy-only SIGHUP reload, and leveled syslog/stderr logging
 - forced commands from configuration, authorized_keys, and certificates
 - `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory`
 - internal SFTP through `github.com/pkg/sftp`, including read-only mode (`-R`) and start directory (`-d`)
@@ -239,7 +240,7 @@ e2e-tests/
 ├── e2e_test.go
 ├── harness/
 ├── images/{debian,ubuntu,fedora}/Containerfile
-├── suites/{smoke,auth,privsep,config,cert,interop}/
+├── suites/{smoke,auth,privsep,config,cert,interop,sftp,daemon}/
 └── testdata/
 ```
 
@@ -261,6 +262,8 @@ Suites verify:
 - `config`: Include/recursion, weak algorithms, unknown keywords, valid/invalid `AuthenticationMethods`, `-T` defaults
 - `cert`: trusted user CA, principals file, revocation, `cert-authority` in `authorized_keys`, certificate force-command, host certificates
 - `interop`: real `ssh`/`scp`/`sftp`, exit status, PTY, client-alive longevity, `no-more-sessions`, and forwarding rejection
+- `sftp`: external subsystem, chroot, and read-only internal SFTP
+- `daemon`: SIGHUP reload, reload rejection, and inetd mode
 - Debian, Ubuntu, and Fedora containers
 
 ## 10. Phase plan and status

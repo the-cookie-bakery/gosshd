@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"sync"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/cookiengineer/gosshd/internal/auth"
 	"github.com/cookiengineer/gosshd/internal/config"
+	"github.com/cookiengineer/gosshd/internal/logging"
 )
 
 type rpcResponse struct {
@@ -43,7 +43,7 @@ func (r *rpcClient) readLoop() {
 	for {
 		p, fds, err := r.pc.Read()
 		if err != nil {
-			log.Printf("rpc read: %v", err)
+			logging.Warningf("rpc read: %v", err)
 			r.mu.Lock()
 			for _, ch := range r.pending {
 				ch <- rpcResponse{err: err}
@@ -151,6 +151,7 @@ func RunWorker() error {
 	ctrlFile.Close()
 	rpc := newRPCClient(pc)
 	cfg := init.Config
+	logging.Configure(cfg.LogLevel, cfg.SyslogFacility, false)
 	var signers []ssh.Signer
 	for i, hk := range init.HostKeys {
 		pub, err := ssh.ParsePublicKey(hk.Blob)
@@ -185,7 +186,7 @@ func RunWorker() error {
 	serverCfg.VerifiedPublicKeyCallback = auth.verifiedCallback
 	serverCfg.AuthLogCallback = func(conn ssh.ConnMetadata, method string, err error) {
 		if err != nil {
-			log.Printf("auth failed user=%q method=%s remote=%s", conn.User(), method, conn.RemoteAddr())
+			logging.Warningf("auth failed user=%q method=%s remote=%s", conn.User(), method, conn.RemoteAddr())
 		}
 	}
 	if err := applyWorkerSandbox(); err != nil {
@@ -400,7 +401,7 @@ type sessionHandler struct {
 }
 
 func handleSession(conn *ssh.ServerConn, ch ssh.Channel, requests <-chan *ssh.Request, rpc *rpcClient, cfg *config.Config) {
-	log.Printf("session opened user=%q", conn.User())
+	logging.Debugf("session opened user=%q", conn.User())
 	h := &sessionHandler{conn: conn, ch: ch, rpc: rpc, cfg: cfg}
 	if p, ok := conn.Permissions.ExtraData["gosshd"].(*auth.Permissions); ok {
 		h.perms = p
@@ -534,7 +535,7 @@ func handleSession(conn *ssh.ServerConn, ch ssh.Channel, requests <-chan *ssh.Re
 }
 
 func (h *sessionHandler) start(command, subsystem string) (func(), error) {
-	log.Printf("session start command=%q subsystem=%q", command, subsystem)
+	logging.Debugf("session start command=%q subsystem=%q", command, subsystem)
 	h.mu.Lock()
 	pty := h.pty
 	term := h.term
@@ -559,7 +560,7 @@ func (h *sessionHandler) start(command, subsystem string) (func(), error) {
 		}
 		return nil, errors.New("session open failed")
 	}
-	log.Printf("session opened id=%s", res.SessionID)
+	logging.Debugf("session opened id=%s", res.SessionID)
 	h.mu.Lock()
 	h.sessionID = res.SessionID
 	h.mu.Unlock()
@@ -600,7 +601,7 @@ func closeLocalFiles(files ...*os.File) {
 }
 
 func (h *sessionHandler) relayPty(f *os.File) {
-	log.Printf("session pty relay start")
+	logging.Debugf("session pty relay start")
 	defer f.Close()
 	h.mu.Lock()
 	id := h.sessionID
@@ -623,15 +624,15 @@ func (h *sessionHandler) relayPty(f *os.File) {
 	_, _ = io.Copy(h.ch, f)
 	res := <-resCh
 	if res == nil {
-		log.Printf("session wait failed")
+		logging.Warningf("session wait failed")
 		return
 	}
-	log.Printf("session exit status=%d signal=%q", res.ExitStatus, res.Signal)
+	logging.Infof("session exit status=%d signal=%q", res.ExitStatus, res.Signal)
 	h.sendExit(res)
 }
 
 func (h *sessionHandler) relaySock(in, out *os.File) {
-	log.Printf("session socket relay start")
+	logging.Debugf("session socket relay start")
 	defer closeLocalFiles(in, out)
 	h.mu.Lock()
 	id := h.sessionID
@@ -653,13 +654,13 @@ func (h *sessionHandler) relaySock(in, out *os.File) {
 		_ = in.Close()
 	}()
 	n, err := io.Copy(h.ch, out)
-	log.Printf("session output copied %d bytes err=%v", n, err)
+	logging.Debugf("session output copied %d bytes err=%v", n, err)
 	res := <-resCh
 	if res == nil {
-		log.Printf("session wait failed")
+		logging.Warningf("session wait failed")
 		return
 	}
-	log.Printf("session exit status=%d signal=%q", res.ExitStatus, res.Signal)
+	logging.Infof("session exit status=%d signal=%q", res.ExitStatus, res.Signal)
 	h.sendExit(res)
 }
 

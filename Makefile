@@ -2,7 +2,7 @@ GO ?= go
 CGO_ENABLED ?= 0
 E2E_IMAGES ?= debian,ubuntu,fedora
 E2E_IMAGE_LIST ?= debian ubuntu fedora
-E2E_SUITES ?= smoke,auth,privsep,config,cert,interop,sftp
+E2E_SUITES ?= smoke,auth,privsep,config,cert,interop,sftp,daemon
 STATICCHECK_VERSION ?= latest
 GOVULNCHECK_VERSION ?= latest
 

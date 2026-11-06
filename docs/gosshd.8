@@ -1,0 +1,109 @@
+.TH GOSSHD 8 "2026-11-06" "gosshd 0.1.0" "System Administration"
+.SH NAME
+gosshd \- Linux SSH server with a modern cryptographic baseline
+.SH SYNOPSIS
+.B gosshd
+.RB [ \-4 | \-6 ]
+.RB [ \-D ]
+.RB [ \-e ]
+.RB [ \-f
+.IR config ]
+.RB [ \-g
+.IR time ]
+.RB [ \-h
+.IR host_key ]
+.RB [ \-i ]
+.RB [ \-o
+.IR option ]
+.RB [ \-p
+.IR port ]
+.RB [ \-t ]
+.RB [ \-T ]
+.RB [ \-V ]
+.SH DESCRIPTION
+.B gosshd
+is a Linux SSH server built on the Go SSH implementation. It runs a
+privileged monitor, an unprivileged worker per connection, and a session
+launcher that drops to the target account. Forwarding is disabled.
+.PP
+Configuration is read from
+.I /etc/ssh/sshd_config
+by default. The parser supports includes, first-value-wins semantics, Match
+blocks, modern algorithm allowlists, authorized commands, and explicit
+rejection of unsupported or weak directives.
+.SH OPTIONS
+.TP
+.B \-4
+Listen on IPv4 addresses only.
+.TP
+.B \-6
+Listen on IPv6 addresses only.
+.TP
+.B \-D
+Do not detach. Logs still go to syslog unless
+.B \-e
+is used.
+.TP
+.B \-e
+Log to standard error instead of syslog.
+.TP
+.BI \-f " config"
+Read configuration from
+.IR config .
+.TP
+.BI \-g " time"
+Override LoginGraceTime. A bare number is interpreted as seconds.
+.TP
+.BI \-h " host_key"
+Add a host key file.
+.TP
+.B \-i
+Run in inetd mode using standard input as the connection.
+.TP
+.BI \-o " option"
+Apply a configuration option. May be repeated in the file but only one
+command-line option is accepted.
+.TP
+.BI \-p " port"
+Override the listening port.
+.TP
+.B \-t
+Test the configuration and exit.
+.TP
+.B \-T
+Print the effective configuration as JSON and exit. This is not the same
+format as OpenSSH's
+.BR sshd (8)
+output.
+.TP
+.B \-V
+Print the version and exit.
+.SH SIGNALS
+.TP
+.B SIGHUP
+Reload authentication and policy settings from the configuration file.
+Changes to listeners, host keys, \fBPort\fR, \fBAddressFamily\fR,
+\fBMaxStartups\fR, or \fBRequiredRSASize\fR require a restart.
+.TP
+.B SIGINT, SIGTERM
+Stop accepting connections and shut down.
+.SH FILES
+.TP
+.I /etc/ssh/sshd_config
+Default configuration file.
+.TP
+.I /etc/ssh/ssh_host_*_key
+Default host key locations.
+.TP
+.I /etc/motd
+Message of the day (when PrintMotd is enabled).
+.TP
+.I /var/log/lastlog
+Last-login information (when PrintLastLog is enabled).
+.SH SEE ALSO
+.BR ssh (1),
+.BR sshd_config (5),
+.BR ssh-keygen (1)
+.SH NOTES
+Forwarding, PAM, FIPS mode, and Ed448 are not supported in this build.
+Authorized command output is treated as untrusted input.

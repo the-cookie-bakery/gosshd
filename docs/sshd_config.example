@@ -1,0 +1,72 @@
+# gosshd example configuration
+#
+# See docs/gosshd.8 and docs/implementation-plan.md for supported behavior.
+# Forwarding is intentionally disabled in v1.
+
+Port 22
+ListenAddress 0.0.0.0
+AddressFamily any
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+PidFile /run/gosshd.pid
+LogLevel INFO
+SyslogFacility AUTH
+
+# Modern algorithms are the default; listings are shown for clarity.
+KexAlgorithms mlkem768x25519-sha256,curve25519-sha256,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group16-sha512,diffie-hellman-group14-sha256
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256
+RequiredRSASize 2048
+
+# Authentication
+PasswordAuthentication yes
+PubkeyAuthentication yes
+KbdInteractiveAuthentication yes
+PermitRootLogin prohibit-password
+PermitEmptyPasswords no
+MaxAuthTries 6
+MaxSessions 10
+LoginGraceTime 120
+AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys2
+StrictModes yes
+
+# Optional multi-factor composition.
+# AuthenticationMethods publickey,password
+
+# Access control
+# AllowUsers alice bob@192.0.2.0/24
+# DenyUsers mallory
+# AllowGroups staff
+# DenyGroups guests
+
+# Session behavior
+PrintMotd yes
+PrintLastLog yes
+PermitTTY yes
+PermitUserRC yes
+AcceptEnv LANG LC_*
+# SetEnv FOO=bar
+# ForceCommand /usr/local/bin/restricted-shell
+
+# Internal SFTP. Use "-R" for read-only and "-d <dir>" for a start directory.
+Subsystem sftp internal-sftp
+
+# Optional authorized key/principal commands. Both require a command user.
+# AuthorizedKeysCommand /usr/local/bin/authorized-keys %u
+# AuthorizedKeysCommandUser sshkeys
+# AuthorizedPrincipalsCommand /usr/local/bin/authorized-principals %u
+# AuthorizedPrincipalsCommandUser sshkeys
+# TrustedUserCAKeys /etc/ssh/user_ca.pub
+# AuthorizedPrincipalsFile /etc/ssh/principals/%u
+# RevokedKeys /etc/ssh/revoked_keys
+
+# Match blocks are evaluated per connection. Global values take precedence.
+# Match User alice Address 192.0.2.0/24
+#     PasswordAuthentication yes
+#     ForceCommand /usr/local/bin/alice-shell
+#     PermitTTY yes
+#
+# Match Group guests
+#     PasswordAuthentication no
+#     ChrootDirectory /srv/guests/%u
+#     PermitTTY no

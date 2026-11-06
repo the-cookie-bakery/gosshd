@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -24,6 +23,7 @@ import (
 
 	"github.com/cookiengineer/gosshd/internal/auth"
 	"github.com/cookiengineer/gosshd/internal/config"
+	"github.com/cookiengineer/gosshd/internal/logging"
 	"github.com/cookiengineer/gosshd/internal/nss"
 )
 
@@ -172,6 +172,7 @@ type Monitor struct {
 	startups  chan struct{}
 	listeners []net.Listener
 	wg        sync.WaitGroup
+	cfgMu     sync.RWMutex
 }
 
 func NewMonitor(cfg *config.Config, a *auth.Authenticator, signers []ssh.Signer) *Monitor {
@@ -190,8 +191,27 @@ func NewMonitor(cfg *config.Config, a *auth.Authenticator, signers []ssh.Signer)
 	return m
 }
 
+func (m *Monitor) configSnapshot() *config.Config {
+	m.cfgMu.RLock()
+	defer m.cfgMu.RUnlock()
+	return m.cfg
+}
+
+func (m *Monitor) authSnapshot() *auth.Authenticator {
+	m.cfgMu.RLock()
+	defer m.cfgMu.RUnlock()
+	return m.auth
+}
+
+func (m *Monitor) Reload(cfg *config.Config, authenticator *auth.Authenticator) {
+	m.cfgMu.Lock()
+	m.cfg = cfg
+	m.auth = authenticator
+	m.cfgMu.Unlock()
+}
+
 func (m *Monitor) Listen() error {
-	addrs, err := m.cfg.Listeners()
+	addrs, err := m.configSnapshot().Listeners()
 	if err != nil {
 		return err
 	}
@@ -204,6 +224,14 @@ func (m *Monitor) Listen() error {
 		m.listeners = append(m.listeners, ln)
 	}
 	return nil
+}
+
+func (m *Monitor) SetListeners(listeners []net.Listener) {
+	m.listeners = listeners
+}
+
+func (m *Monitor) ServeConn(conn net.Conn) {
+	m.handleConn(conn)
 }
 
 func (m *Monitor) Addrs() []net.Addr {
@@ -274,7 +302,7 @@ func (m *Monitor) handleConn(conn net.Conn) {
 	defer tcpFile.Close()
 	conn.Close()
 
-	initData := WorkerInit{Config: m.cfg.Clone()}
+	initData := WorkerInit{Config: m.configSnapshot().Clone()}
 	for _, s := range m.signers {
 		algorithms := []string{s.PublicKey().Type()}
 		if multi, ok := s.(ssh.MultiAlgorithmSigner); ok {
@@ -328,7 +356,7 @@ func (m *Monitor) serveControl(pc *PacketConn, st *sessionState) {
 			unix.Close(fd)
 		}
 		if err != nil {
-			log.Printf("control read: %v", err)
+			logging.Warningf("control read: %v", err)
 			break
 		}
 		handlers.Add(1)
@@ -366,7 +394,7 @@ func (m *Monitor) handleAndRespond(st *sessionState, pc *PacketConn, pkt *Packet
 	resp := &Packet{ID: pkt.ID, Type: "response", Result: res}
 	if err := pc.Write(resp, sendFDs...); err != nil {
 		closeFiles(closeAfter...)
-		log.Printf("control write: %v", err)
+		logging.Warningf("control write: %v", err)
 		return
 	}
 	closeFiles(closeAfter...)
@@ -383,6 +411,8 @@ func shutdownSessions(st *sessionState) {
 }
 
 func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
+	cfg := m.configSnapshot()
+	authenticator := m.authSnapshot()
 	switch p.Type {
 	case "sign":
 		if p.KeyIndex < 0 || p.KeyIndex >= len(m.signers) {
@@ -410,7 +440,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 			time.Sleep(delay)
 		}
 		st.authMu.Lock()
-		perms, err := m.auth.Password(method, p.User, p.Password, st.remote, st.local)
+		perms, err := authenticator.Password(method, p.User, p.Password, st.remote, st.local)
 		for i := range p.Password {
 			p.Password[i] = 0
 		}
@@ -420,7 +450,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 			authFailureSleep()
 			return &Result{Error: err.Error()}
 		}
-		final, next, err := m.advanceAuth(st, method)
+		final, next, err := m.advanceAuth(cfg, st, method)
 		st.authMu.Unlock()
 		if err != nil {
 			m.limiter.failure(host)
@@ -430,7 +460,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		m.limiter.success(host)
 		if final {
 			st.setPerms(perms)
-			st.setResolved(m.cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
+			st.setResolved(cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
 			return &Result{OK: true, Permissions: perms}
 		}
 		return &Result{OK: true, Partial: true, NextMethods: next}
@@ -439,7 +469,7 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		if err != nil {
 			return &Result{Error: "invalid public key"}
 		}
-		perms, err := m.auth.PublicKey(p.User, key, st.remote, st.local)
+		perms, err := authenticator.PublicKey(p.User, key, st.remote, st.local)
 		if err != nil {
 			return &Result{Error: err.Error()}
 		}
@@ -450,19 +480,19 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 			return &Result{Error: "invalid public key"}
 		}
 		st.authMu.Lock()
-		perms, err := m.auth.PublicKey(p.User, key, st.remote, st.local)
+		perms, err := authenticator.PublicKey(p.User, key, st.remote, st.local)
 		if err != nil {
 			st.authMu.Unlock()
 			return &Result{Error: err.Error()}
 		}
-		final, next, err := m.advanceAuth(st, "publickey")
+		final, next, err := m.advanceAuth(cfg, st, "publickey")
 		st.authMu.Unlock()
 		if err != nil {
 			return &Result{Error: err.Error()}
 		}
 		if final {
 			st.setPerms(perms)
-			st.setResolved(m.cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
+			st.setResolved(cfg.Resolve(perms.Username, perms.Groups, st.remote, st.local))
 			return &Result{OK: true, Permissions: perms}
 		}
 		return &Result{OK: true, Partial: true, NextMethods: next}
@@ -511,9 +541,9 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 		exit, sig, waitErr := s.exit, s.signal, s.waitErr
 		s.mu.Unlock()
 		if waitErr != nil {
-			log.Printf("monitor session wait id=%s err=%v", p.SessionID, waitErr)
+			logging.Warningf("monitor session wait id=%s err=%v", p.SessionID, waitErr)
 		}
-		log.Printf("monitor session wait id=%s exit=%d signal=%q", p.SessionID, exit, sig)
+		logging.Infof("monitor session wait id=%s exit=%d signal=%q", p.SessionID, exit, sig)
 		res := &Result{OK: true, ExitStatus: exit, Signal: sig}
 		st.removeSession(p.SessionID)
 		s.closeMaster()
@@ -535,11 +565,12 @@ func (m *Monitor) handlePacket(st *sessionState, p *Packet) *Result {
 }
 
 func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Packet) (string, error) {
-	log.Printf("monitor open session user=%q pty=%v command=%q subsystem=%q", perms.Username, p.Pty, p.Command, p.Subsystem)
-	cfg := st.getResolved()
-	if cfg == nil {
-		cfg = m.cfg
+	logging.Debugf("monitor open session user=%q pty=%v command=%q subsystem=%q", perms.Username, p.Pty, p.Command, p.Subsystem)
+	resolved := st.getResolved()
+	if resolved == nil {
+		resolved = m.configSnapshot()
 	}
+	cfg := resolved
 	if p.Pty && (!cfg.PermitTTY || perms.NoPTY) {
 		return "", errors.New("pty not permitted")
 	}
@@ -673,7 +704,7 @@ func (m *Monitor) openSession(st *sessionState, perms *auth.Permissions, p *Pack
 		closeFiles(workerFiles...)
 		return "", err
 	}
-	log.Printf("monitor session started id=%s pid=%d", id, cmd.Process.Pid)
+	logging.Debugf("monitor session started id=%s pid=%d", id, cmd.Process.Pid)
 	return id, nil
 }
 
@@ -782,8 +813,8 @@ func addrString(addr net.Addr) string {
 	return addr.String()
 }
 
-func (m *Monitor) advanceAuth(st *sessionState, method string) (bool, []string, error) {
-	final, next, done, ok := authStep(m.cfg.AuthenticationMethods, st.authDone, method)
+func (m *Monitor) advanceAuth(cfg *config.Config, st *sessionState, method string) (bool, []string, error) {
+	final, next, done, ok := authStep(cfg.AuthenticationMethods, st.authDone, method)
 	if !ok {
 		return false, nil, errors.New("authentication method sequence not allowed")
 	}

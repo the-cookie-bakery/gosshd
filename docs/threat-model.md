@@ -91,6 +91,7 @@ Workers are spawned with `nobody` credentials and therefore execute with an empt
 | `Match`-scoped policy resolved per connection with monitor-owned addresses | `internal/config`, `internal/auth`, `internal/privsep` |
 | Authorized-command execution: root-owned absolute binary, configured user, bounded output/time, no shell | `internal/auth/command.go` |
 | Worker seccomp deny-list (`TSYNC`) blocks exec, ptrace, mount, namespace, and privilege syscalls | `internal/privsep/seccomp_linux.go` |
+| Policy reload rejects listener and host-key changes | `cmd/gosshd/main.go`, `internal/privsep/monitor.go` |
 | Forged or unknown session RPC rejection and per-connection state isolation | `internal/privsep` |
 | Forwarding, agent, and X11 channels rejected and not advertised | `internal/privsep/worker.go` |
 | Authentication negative, privsep, certificate, and config E2E suites | `e2e-tests/suites` |

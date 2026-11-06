@@ -28,6 +28,8 @@ Still to complete:
 - [Implementation plan](docs/implementation-plan.md)
 - [Threat model](docs/threat-model.md)
 - [Remaining tasks and verification tracker](docs/remaining-tasks.md)
+- [Man page](docs/gosshd.8)
+- [Example configuration](docs/sshd_config.example)
 
 ## Build
 
@@ -57,7 +59,7 @@ Useful environment variables:
 
 ```text
 GOSSHD_E2E_IMAGES=debian,ubuntu,fedora
-GOSSHD_E2E_SUITES=smoke,auth,privsep,config,cert,interop,sftp
+GOSSHD_E2E_SUITES=smoke,auth,privsep,config,cert,interop,sftp,daemon
 GOSSHD_E2E_KEEP=1
 GOSSHD_E2E_REQUIRE=1
 ```

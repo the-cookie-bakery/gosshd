@@ -31,7 +31,7 @@ go test -tags=e2e -count=1 -timeout=30m ./e2e-tests
 
 Current E2E images: Debian, Ubuntu, Fedora.
 
-Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
+Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sftp`, `daemon`.
 
 ## 3. Open and partial tasks
 
@@ -138,12 +138,12 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 | ID | Task | Implementation status | Unit test / verification | Smoke test / E2E test |
 | --- | --- | --- | --- | --- |
 | OPS-01 | CLI flags: `-f`, `-t`, `-T`, `-D`, `-p`, `-h`, `-o`, `-e`, `-4`, `-6`, `-g`, `-V` | Done | Manual verification | Daemon started with `-D -f` in smoke suite |
-| OPS-02 | Inetd mode (`-i`) | Pending | Returns not implemented | Not covered |
-| OPS-03 | systemd socket activation | Pending | Not implemented | Not covered |
-| OPS-04 | SIGHUP configuration reload | Pending | Not implemented | Not covered |
-| OPS-05 | Syslog/journald integration and log levels | Partial | Uses standard logger; parsed `LogLevel` not fully applied | Not covered |
+| OPS-02 | Inetd mode (`-i`) | Done | `serveInetd` uses stdin as the connection; `daemon` suite exercises it | Passing |
+| OPS-03 | systemd socket activation | Partial | `LISTEN_PID`/`LISTEN_FDS` listener adoption implemented; only the inactive path is unit-tested | Not covered |
+| OPS-04 | SIGHUP configuration reload | Done | Policy reload with listener/host-key change rejection; `reloadCompatible` unit tests | `daemon` suite reloads ForceCommand and rejects listener changes |
+| OPS-05 | Syslog/journald integration and log levels | Partial | Leveled logger with syslog fallback; `TestLevelFiltering` | Syslog path not covered in E2E |
 | OPS-06 | PID file lifecycle | Done | Manual code inspection | Not covered |
-| OPS-07 | Man page and example configuration | Pending | README exists | Not covered |
+| OPS-07 | Man page and example configuration | Done | `docs/gosshd.8`, `docs/sshd_config.example`, README links | N/A |
 | OPS-08 | Threat model and security review document | Done | `docs/threat-model.md` covers assets, trust boundaries, attacker models, controls, residual risks, and non-goals | N/A |
 | DOC-01 | Implementation plan document | Done | `docs/implementation-plan.md` | N/A |
 | DOC-02 | Remaining task and verification tracker | Done | This document | N/A |
