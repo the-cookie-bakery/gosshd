@@ -116,7 +116,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | SFTP-03 | SFTP chroot and permission behavior | Done | `sftp` suite writes through chrooted internal SFTP | Passing |
 | SFTP-04 | SFTP packet limits, read-only mode, and fuzz coverage | Partial | `internal-sftp -R`/`-d` parsing, read-only E2E, and parser fuzz target; pkg/sftp enforces packet length limits | Read-only and chroot paths covered |
 
-### 3.6 End-to-end test coverage and CI
+### 3.6 End-to-end test coverage
 
 | ID | Task | Implementation status | Unit test / verification | Smoke test / E2E test |
 | --- | --- | --- | --- | --- |
@@ -130,7 +130,6 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`, `sf
 | E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Done | `privsep` suite asserts uid separation, monitor capability reduction, empty worker capabilities, and `setpriv` access denial for shadow/host keys | Passing |
 | E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Done | New `interop` suite | `ssh`, `scp`, and `sftp` pass |
 | E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Done | `interop` suite rejects direct-tcpip, remote forward, agent, and X11 requests | Passing |
-| E2E-11 | CI workflow running unit tests, vet, and the Podman matrix | Partial | `make ci` runs build, unit, vet, race, staticcheck, and govulncheck; no hosted workflow | Podman matrix remains manual |
 | E2E-12 | Failure artifact retention and container leak checks | Partial | Harness defaults/suffix unit tests; retention behavior remains manual | No leak-check test |
 
 ### 3.7 CLI, operations, and documentation
@@ -183,7 +182,7 @@ The following areas are implemented and have at least smoke or unit verification
 
 1. Add rc-file, MOTD, last-login, terminal-mode parity, and session request parity.
 2. Add systemd socket activation, inetd mode, SIGHUP reload, and syslog integration.
-3. Add hosted CI, fuzzing, and SFTP/session unit coverage.
+3. Add fuzzing and SFTP/session unit coverage.
 
 ### Milestone D: optional PAM backend
 
