@@ -202,6 +202,7 @@ The session layer supports:
 
 - `pty-req`, `env`, `shell`, `exec`, `subsystem`, `window-change`, and `signal`
 - PTY allocation, terminal sizing, stdout/stderr handling, and exit status
+- client-alive keepalives, TCP keepalive, `keepalive@openssh.com`, and `no-more-sessions@openssh.com`
 - environment filtering through `AcceptEnv`, `SetEnv`, and `PermitUserEnvironment`
 - forced commands from configuration, authorized_keys, and certificates
 - `ForceCommand`, `PermitTTY`, `MaxSessions`, `ChrootDirectory`
@@ -213,8 +214,6 @@ Not yet implemented:
 - `~/.ssh/rc` and `/etc/ssh/sshrc`
 - MOTD and last-login rendering
 - full terminal mode application from `pty-req`
-- client-alive messages
-- global keepalive and `no-more-sessions` handling
 - SFTP limits, read-only mode, and fuzz coverage
 - complete chroot path ownership validation
 
@@ -244,7 +243,7 @@ e2e-tests/
 ├── e2e_test.go
 ├── harness/
 ├── images/{debian,ubuntu,fedora}/Containerfile
-├── suites/{smoke,auth,privsep,config,cert}/
+├── suites/{smoke,auth,privsep,config,cert,interop}/
 └── testdata/
 ```
 
@@ -265,6 +264,7 @@ Suites verify:
 - `privsep`: worker and session uid separation
 - `config`: Include/recursion, weak algorithms, unknown keywords, `AuthenticationMethods` rejection, `-T` defaults
 - `cert`: trusted user CA, principals file, revocation, `cert-authority` in `authorized_keys`, certificate force-command, host certificates
+- `interop`: real `ssh`/`scp`/`sftp`, exit status, PTY, client-alive longevity, `no-more-sessions`, and forwarding rejection
 - Debian, Ubuntu, and Fedora containers
 
 ## 10. Phase plan and status

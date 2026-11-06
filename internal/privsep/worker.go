@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -215,8 +216,19 @@ func RunWorker() error {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	defer sshConn.Close()
-	go ssh.DiscardRequests(reqs)
+	applyTCPKeepAlive(conn, cfg.TCPKeepAlive)
+
+	var noMoreSessions atomic.Bool
+	stopKeepalive := make(chan struct{})
+	defer close(stopKeepalive)
+	go handleGlobalRequests(reqs, &noMoreSessions)
+	startClientAlive(sshConn, cfg.ClientAliveInterval, cfg.ClientAliveCountMax, stopKeepalive)
+
 	for newChan := range chans {
+		if noMoreSessions.Load() {
+			newChan.Reject(ssh.Prohibited, "no more sessions")
+			continue
+		}
 		if newChan.ChannelType() != "session" {
 			newChan.Reject(ssh.UnknownChannelType, "unsupported channel type")
 			continue
@@ -228,6 +240,29 @@ func RunWorker() error {
 		go handleSession(sshConn, ch, requests, rpc, cfg)
 	}
 	return nil
+}
+
+func handleGlobalRequests(reqs <-chan *ssh.Request, noMoreSessions *atomic.Bool) {
+	for req := range reqs {
+		switch req.Type {
+		case "keepalive@openssh.com":
+			req.Reply(true, nil)
+		case "no-more-sessions@openssh.com":
+			noMoreSessions.Store(true)
+			req.Reply(true, nil)
+		case "tcpip-forward", "cancel-tcpip-forward",
+			"streamlocal-forward@openssh.com", "cancel-streamlocal-forward@openssh.com":
+			req.Reply(false, nil)
+		default:
+			req.Reply(false, nil)
+		}
+	}
+}
+
+func applyTCPKeepAlive(conn net.Conn, enabled bool) {
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		_ = tcp.SetKeepAlive(enabled)
+	}
 }
 
 func resultPerms(res *Result) (*ssh.Permissions, error) {

@@ -21,7 +21,7 @@ func TestE2E(t *testing.T) {
 	}
 	suites := os.Getenv("GOSSHD_E2E_SUITES")
 	if suites == "" {
-		suites = "smoke,auth,privsep,config,cert"
+		suites = "smoke,auth,privsep,config,cert,interop"
 	}
 	suiteNames := splitList(suites)
 	artifacts := harness.BuildArtifacts(t, harness.Options{RepoRoot: root}, suiteNames)

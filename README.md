@@ -60,7 +60,7 @@ Useful environment variables:
 
 ```text
 GOSSHD_E2E_IMAGES=debian,ubuntu,fedora
-GOSSHD_E2E_SUITES=smoke,auth,privsep,config,cert
+GOSSHD_E2E_SUITES=smoke,auth,privsep,config,cert,interop
 GOSSHD_E2E_KEEP=1
 GOSSHD_E2E_REQUIRE=1
 ```

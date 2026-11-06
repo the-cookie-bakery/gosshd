@@ -31,7 +31,7 @@ go test -tags=e2e -count=1 -timeout=30m ./e2e-tests
 
 Current E2E images: Debian, Ubuntu, Fedora.
 
-Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
+Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`, `interop`.
 
 ## 3. Open and partial tasks
 
@@ -45,7 +45,7 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 | CFG-04 | `AuthorizedKeysCommand` and `AuthorizedKeysCommandUser` execution | Partial | Parsed only; startup warning emitted; no execution test | Not covered |
 | CFG-05 | `AuthorizedPrincipalsCommand` and `AuthorizedPrincipalsCommandUser` execution | Pending | Not implemented | Not covered |
 | CFG-06 | Full `AuthenticationMethods` composition and partial-success flows | Pending | Configurations are rejected at parse time instead of being silently ignored; composition not implemented | Not covered |
-| CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | Parser accepts values; behavior is not fully implemented | Not covered |
+| CFG-07 | Complete semantics for accepted but ignored directives such as `Compression`, `UseDNS`, `ClientAlive*`, forwarding options | Partial | `ClientAlive*` and `TCPKeepAlive` are applied; compression, DNS, and forwarding options remain acknowledged only | `interop` exercises client-alive and TCP keepalive paths |
 | CFG-08 | Config validation parity: `-t`, `-T`, key permissions, include validation | Partial | `-t` and `-T` manually verified | Smoke suite starts daemon with generated config; no negative config E2E |
 | CFG-09 | Match/Include E2E fixtures | Pending | None | Needed |
 
@@ -107,8 +107,8 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 | SESS-05 | `~/.ssh/rc` and `/etc/ssh/sshrc` execution | Pending | Parsed `PermitUserRC`; no execution | Not covered |
 | SESS-06 | MOTD and last-login rendering | Pending | Parsed `PrintMotd` / `PrintLastLog`; no rendering | Not covered |
 | SESS-07 | Apply terminal modes from `pty-req` | Partial | Request parsed; modes not fully applied | Not covered |
-| SESS-08 | Client-alive messages and disconnect threshold | Pending | Parsed config only | Not covered |
-| SESS-09 | Global request handling: keepalive, `no-more-sessions@openssh.com` | Pending | Currently uses `ssh.DiscardRequests` | Not covered |
+| SESS-08 | Client-alive messages and disconnect threshold | Done | Keepalive state machine unit tests; liveness treats any reply as alive | `interop` suite keeps a session alive across the interval |
+| SESS-09 | Global request handling: keepalive, `no-more-sessions@openssh.com` | Done | Dedicated handler replies to keepalive, latches no-more-sessions, rejects forwarding globals | `interop` suite covers no-more-sessions and forwarding rejection |
 | SESS-10 | Session max-channel and concurrent-session enforcement | Partial | `MaxSessions` is enforced in monitor | Not covered |
 | SESS-11 | Session unit tests for request parsing, env filtering, exit status, and signals | Pending | None | Needed |
 | SFTP-01 | In-process `internal-sftp` subsystem | Done | No dedicated unit test | SFTP write/read in smoke suite |
@@ -128,8 +128,8 @@ Current E2E suites: `smoke`, `auth`, `privsep`, `config`, `cert`.
 | E2E-06 | Certificate E2E: host cert, user cert, principals, revocation, certificate key options | Done | New `cert` suite | Passing |
 | E2E-07 | Config E2E: Include, Match, weak-algorithm rejection, unsupported directives | Partial | New `config` suite covers Include/recursion, weak algorithms, unknown keywords, AuthenticationMethods rejection, and `-T` | Match still pending |
 | E2E-08 | Privsep E2E: monitor/worker/session uid separation, shadow/host-key access denial, forged RPC rejection | Done | `privsep` suite asserts uid separation, monitor capability reduction, empty worker capabilities, and `setpriv` access denial for shadow/host keys | Passing |
-| E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Pending | None | Needed |
-| E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Pending | None | Needed |
+| E2E-09 | OpenSSH interop E2E with real `ssh`, `scp`, `sftp`, `ssh-keygen` | Done | New `interop` suite | `ssh`, `scp`, and `sftp` pass |
+| E2E-10 | Forwarding rejection E2E (`direct-tcpip`, agent, X11, Unix sockets) | Done | `interop` suite rejects direct-tcpip, remote forward, agent, and X11 requests | Passing |
 | E2E-11 | CI workflow running unit tests, vet, and the Podman matrix | Partial | `make ci` runs build, unit, vet, race, staticcheck, and govulncheck; no hosted workflow | Podman matrix remains manual |
 | E2E-12 | Failure artifact retention and container leak checks | Partial | Harness keeps logs/inspect data and supports `GOSSHD_E2E_KEEP=1` | No dedicated test |
 
@@ -183,10 +183,9 @@ The following areas are implemented and have at least smoke or unit verification
 
 ### Milestone C: operational readiness
 
-1. Implement client-alive, keepalive, `no-more-sessions`, and session request parity.
-2. Add rc-file, MOTD, and last-login behavior.
-3. Add systemd socket activation, inetd mode, SIGHUP reload, and syslog integration.
-4. Add CI, fuzzing, race tests, `staticcheck`, and `govulncheck`.
+1. Add rc-file, MOTD, last-login, terminal-mode parity, and session request parity.
+2. Add systemd socket activation, inetd mode, SIGHUP reload, and syslog integration.
+3. Add hosted CI, fuzzing, and SFTP/session unit coverage.
 
 ### Milestone D: optional PAM backend
 
